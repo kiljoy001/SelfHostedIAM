@@ -1,0 +1,35 @@
+<!-- templates/index.html -->
+<!DOCTYPE html>
+<html>
+<head>
+    <title>Decentralized Identity System</title>
+    <style>
+        .node-map { display: grid; grid-template-columns: repeat(auto-fill, 200px); gap: 1rem; }
+        .node-card { border: 1px solid #ccc; padding: 1rem; border-radius: 4px; }
+    </style>
+</head>
+<body>
+    <h1>Decentralized Identity Network</h1>
+
+    <div class="controls">
+        <form method="post" action="/create">
+            <button type="submit">Create New Identity</button>
+        </form>
+    </div>
+
+    <h2>Network Nodes</h2>
+    <div class="node-map">
+        {% for id in identities %}
+        <div class="node-card">
+            <h3>{{ id[4] | truncate(15) }}</h3>
+            <p>IPFS CID: {{ id[3] | truncate(10) }}</p>
+            <a href="/verify/{{ id[0] }}">Verify</a>
+        </div>
+        {% endfor %}
+    </div>
+
+    <h2>System Status</h2>
+    <p>Merkle Root: <code>{{ merkle_root }}</code></p>
+    <p>Your Yggdrasil IP: <code>{{ yggdrasil_ip }}</code></p>
+</body>
+</html>
