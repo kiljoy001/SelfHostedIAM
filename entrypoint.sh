@@ -18,10 +18,14 @@ tpm2-abrmd \
   --daemon &
 
 # Wait for abrmd to start
-sleep 1
+until [ -S /tpmdata/tpm2-simtpm.sock ]; do sleep 1; done
+until nc -z localhost 2321; do sleep 1; done
 
 # Initialize the TPM
 tpm2_startup -c
 
+#run test
+python3 /test_tpm2.py
+
 # Drop into an interactive shell
-exec /bin/bash
+exec tail -f /dev/null
