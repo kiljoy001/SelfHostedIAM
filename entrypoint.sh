@@ -21,16 +21,15 @@ tpm2-abrmd \
   --allow-root &
 
 # Wait for abrmd to start
-# until [ -S /tpmdata/tpm2-simtpm.sock ]; do sleep 1; done
 until nc -z localhost 2321; do sleep 1; done
 
 # Initialize the TPM
 tpm2_startup -c
 
-#run test
+# Enable Pipenv
 pipenv shell
 pipenv install Pipfile 
-# exec pipenv run python -m /app/test_tpm.py
+
 
 # Drop into an interactive shell
 exec /bin/bash
