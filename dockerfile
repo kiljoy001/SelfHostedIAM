@@ -1,8 +1,9 @@
 # Use Ubuntu 22.04 as the base image
-FROM fedora:40
+FROM fedora:39
 
 # Install dependencies
-RUN dnf install -y tpm2-tss tpm2-tss-fapi python3-pip pkg-config tpm2-tss-devel python3-devel swtpm tpm2-abrmd dbus-daemon
+RUN dnf install -y tpm2-tss tpm2-tss-fapi python3-pip pkg-config tpm2-tss-devel \
+    python3-devel swtpm tpm2-abrmd dbus-daemon nmap-ncat pipenv
 RUN dnf groupinstall -y 'Development Tools'
 RUN dnf clean all
 
@@ -19,6 +20,8 @@ COPY tpm2-abrmd.conf /etc/dbus-1/system.d/
 # Create a directory for your code
 WORKDIR /app
 COPY tpm /app
+COPY Pipfile /app
+
 # Copy entrypoint script
 COPY entrypoint.sh /entrypoint.sh
 RUN chmod +x /entrypoint.sh
