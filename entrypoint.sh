@@ -1,5 +1,9 @@
 #!/bin/bash
 
+# Permission to use dbus
+mkdir -p /var/run/dbus
+dbus-daemon --system --nofork &
+
 # Start the TPM simulator (swtpm) in the background
 swtpm socket \
   --tpmstate dir=/tpmdata \
@@ -14,8 +18,7 @@ sleep 1
 # Start the TPM2 Access Broker/Resource Manager (abrmd)
 tpm2-abrmd \
   --tcti=swtpm:host=localhost,port=2321 \
-  --allow-root \
-  --daemon &
+  --allow-root &
 
 # Wait for abrmd to start
 until [ -S /tpmdata/tpm2-simtpm.sock ]; do sleep 1; done
@@ -25,7 +28,7 @@ until nc -z localhost 2321; do sleep 1; done
 tpm2_startup -c
 
 #run test
-python3 /test_tpm2.py
+exec pipenv run python -m /tpm/test_tpm.py
 
 # Drop into an interactive shell
 exec tail -f /dev/null

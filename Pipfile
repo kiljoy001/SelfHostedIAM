@@ -6,11 +6,7 @@ name = "pypi"
 [packages]
 flask = "*"
 ipfshttpclient = "*"
-pysha3 = "*"
+safe-pysha3 = "*"
 blockcerts-merkletools = "*"
-yggdrasilctl = "*"
 
-[dev-packages]
-
-[requires]
-python_version = "3.11"
+tpm2-pytss = "*"

@@ -1,23 +1,26 @@
-FROM ubuntu:25.04
+# Use Ubuntu 22.04 as the base image
+FROM fedora:40
 
 # Install dependencies
-RUN apt-get update && apt-get install -y \
-    swtpm \
-    tpm2-tools \
-    tpm2-abrmd \           
-    libtss2-* \               
-    gnutls-bin 
+RUN dnf install -y tpm2-tss tpm2-tss-fapi python3-pip pkg-config tpm2-tss-devel python3-devel swtpm tpm2-abrmd dbus-daemon
+RUN dnf groupinstall -y 'Development Tools'
+RUN dnf clean all
 
-# Create TPM simulator state and FAPI directories
-RUN mkdir -p /tpmdata \
-    && mkdir -p /etc/tpm2-tss \
-    && mkdir -p ~/.local/share/tpm2-tss \
-    && chmod 777 /tpmdata
+# Install tpm2-pytss (Python bindings)
+RUN pip3 install tpm2-pytss
 
-# Copy FAPI configuration (create this file locally first)
-COPY fapi-config.json /etc/tpm2-tss/fapi-config.json
-COPY tpm /tpm
+# Configure FAPI
+RUN mkdir -p /etc/tpm2-tss/fapi-profiles \
+    && echo '{"profile_name": "P_RSA"}' > /etc/tpm2-tss/fapi-profiles/P_RSA.json
 
+# Copy config file for abrmd to container
+COPY tpm2-abrmd.conf /etc/dbus-1/system.d/
+
+# Create a directory for your code
+WORKDIR /app
+COPY tpm /app
 # Copy entrypoint script
 COPY entrypoint.sh /entrypoint.sh
 RUN chmod +x /entrypoint.sh
+
+ENTRYPOINT ["/entrypoint.sh"]

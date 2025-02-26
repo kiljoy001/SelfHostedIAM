@@ -7,7 +7,7 @@ from cryptography.hazmat.primitives.asymmetric import ec
 class TPMManager:
     def __init__(self, tcti=None):
         self.esys = ESAPI(tcti)
-        self.signing_key = self._create_signing_key()
+        self.signing_key = self._create_primary_key()
 
     def _create_primary_key(self):
         in_public = TPM2B_PUBLIC(

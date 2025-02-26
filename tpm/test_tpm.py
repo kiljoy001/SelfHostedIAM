@@ -42,6 +42,7 @@ def test_tpm_operations():
                 )
             )
         )
+        )
         print("✓ Signing key created")
 
         # 4. Test signing/verification
