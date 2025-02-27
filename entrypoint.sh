@@ -27,9 +27,9 @@ until nc -z localhost 2321; do sleep 1; done
 tpm2_startup -c
 
 # Enable Pipenv
-pipenv shell
 pipenv install Pipfile 
-
+chmod +x tpm_provisioning.sh
+pipenv shell
 
 # Drop into an interactive shell
 exec /bin/bash
