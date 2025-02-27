@@ -111,8 +111,6 @@ main() {
     # Find and store persistent handle
     find_available_handle
     persistent_handle=$(cat handle.txt)
-    echo "${persistent_handle}" > handle.txt || 
-        log_error "Failed to write handle.txt"
     log_info "Persistent handle stored in handle.txt"
 
     # Create Endorsement Key
