@@ -3,7 +3,7 @@ FROM fedora:41
 
 # Install dependencies
 RUN dnf install -y tpm2-tss tpm2-tss-fapi python3-pip pkg-config tpm2-tss-devel \
-    python3-devel swtpm tpm2-abrmd dbus-daemon nmap-ncat tpm2-tss-engine openssl tpm2-openssl
+    python3-devel swtpm tpm2-abrmd dbus-daemon nmap-ncat tpm2-tss-engine openssl tpm2-openssl tpm2-tools
 RUN dnf install -y @development-tools
 RUN dnf clean all
 
