@@ -1,4 +1,4 @@
-# Use fedora39 as the base image
+# Use fedora 41 as the base image
 FROM fedora:41
 
 # Install dependencies
