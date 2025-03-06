@@ -8,10 +8,9 @@ services:
       - RABBITMQ_DEFAULT_USER=${RABBITMQ_DEFAULT_USER}
       - RABBITMQ_DEFAULT_PASSWORD=${RABBITMQ_DEFAULT_PASSWORD}
     ports:
-      - "5672:5672"
       - "15672:15672"
     volumes:
-      - ./rabbitmq_data: /var/lib/rabbitmq_data
+      - rabbitmq_data:/var/lib/rabbitmq_data
     networks:
       - tpm-net
     healthcheck:
@@ -20,3 +19,20 @@ services:
       timeout: 5s
       retries: 5
       start_period: 30s
+
+  app:
+    build: .
+   
+    ports:
+      - "5000:5000"
+      - "5672:5672" # RabbitMQ
+    
+    networks:
+      - tpm-net
+volumes:
+  rabbitmq_data:
+
+networks:
+  tpm-net:
+    name: tpm_internal_network
+    driver: bridge
