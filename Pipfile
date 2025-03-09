@@ -8,5 +8,5 @@ flask = "*"
 ipfshttpclient = "*"
 safe-pysha3 = "*"
 blockcerts-merkletools = "*"
-
+pika = "*"
 tpm2-pytss = "*"

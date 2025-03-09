@@ -22,7 +22,10 @@ services:
 
   app:
     build: .
-   
+    environment:
+      - HMAC_SECRET_FILE=/run/secrets/hmac_secret
+    secrets:
+      - hmac_secret 
     ports:
       - "5000:5000"
       - "5672:5672" # RabbitMQ
@@ -31,6 +34,10 @@ services:
       - tpm-net
 volumes:
   rabbitmq_data:
+
+secrets:
+  hmac_secret:
+    file: ./hmac_secret.key
 
 networks:
   tpm-net:
