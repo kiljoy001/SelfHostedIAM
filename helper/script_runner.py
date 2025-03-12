@@ -46,6 +46,7 @@ class ScriptRunner:
         """Define expected output files per script"""
         artifacts = {
             "tpm_provision": ["signing_key.pem", "handle.txt"],
-            "generate_cert": ["cert.pem", "tpm.key"]
+            "generate_cert": ["certs/cert.pem", "certs/tpm.key"],
+            "random_number": ["tpm_random.bin"]
         }
         return {name: Path(name).exists() for name in artifacts.get(script_name, [])}

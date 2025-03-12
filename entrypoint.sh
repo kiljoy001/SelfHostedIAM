@@ -28,7 +28,7 @@ tpm2_startup -c
 
 # Enable Pipenv
 pipenv install Pipfile 
-chmod +x tpm_provisioning.sh tpm_self_signed_cert.sh
+chmod +x tpm_provisioning.sh tpm_self_signed_cert.sh tpm_random_number.sh
 pipenv shell
 
 # Drop into an interactive shell

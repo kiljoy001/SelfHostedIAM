@@ -16,8 +16,11 @@ COPY tpm2-abrmd.conf /etc/dbus-1/system.d/
 # Create a directory for your code
 WORKDIR /app
 COPY tpm /app
+COPY helper /helper
 COPY Pipfile /app
 
+# Set python path to root
+ENV PYTHONPATH=/
 # Copy entrypoint script
 COPY entrypoint.sh /entrypoint.sh
 RUN chmod +x /entrypoint.sh
