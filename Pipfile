@@ -10,3 +10,23 @@ safe-pysha3 = "*"
 blockcerts-merkletools = "*"
 pika = "*"
 tpm2-pytss = "*"
+
+[dev-packages]
+pytest = "*"
+pytest-cov = "*"
+pytest-mock = "*"
+pytest-asyncio = "*"
+coverage = "*"
+mypy = "*"
+flake8 = "*"
+types-pika = "*"
+types-requests = "*"
+tox = "*"
+
+[requires]
+python_version = "3.9"
+
+[scripts]
+test = "pytest -v --cov=src --cov-report=xml"
+lint = "flake8 src tests"
+typecheck = "mypy src tests"

@@ -1,4 +1,3 @@
-# helpers/message_handler.py
 import hmac
 import hashlib
 import os
