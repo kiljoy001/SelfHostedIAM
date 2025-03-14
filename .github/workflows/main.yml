@@ -1,23 +1,46 @@
-name: TPM Handler Tests
+name: TPM CI
 
 on: [push, pull_request]
+
+env:
+  RABBITMQ_DEFAULT_USER: ${{ secrets.RABBITMQ_USER }}
+  RABBITMQ_DEFAULT_PASSWORD: ${{ secrets.RABBITMQ_PASSWORD }}
+  HMAC_SECRET: ${{ secrets.HMAC_SECRET }}
 
 jobs:
   test:
     runs-on: ubuntu-latest
-    container:
-      image: fedora:41
-      options: --privileged --security-opt seccomp=unconfined
+    
     services:
       rabbitmq:
-        image: rabbitmq:3-management
+        image: rabbitmq:management
         ports:
-          - 5672:5672
-      swtpm:
-        image: ghcr.io/stefanberger/swtpm:v0.8.0
-        ports:
+          - 15672:15672
+        env:
+          RABBITMQ_DEFAULT_USER: ${{ env.RABBITMQ_DEFAULT_USER }}
+          RABBITMQ_DEFAULT_PASSWORD: ${{ env.RABBITMQ_DEFAULT_PASSWORD }}
+          
+      tpm-emulator:
+        image: ghcr.io/stefanberger/swtpm:latest
+        ports: 
           - 2321:2321
+        options: --privileged
 
     steps:
-    - uses: actions/checkout@v4
-    # ... rest of your steps remain the same ...
+    - name: Checkout code
+      uses: actions/checkout@v4
+
+    - name: Set up Docker Compose
+      run: |
+        docker compose -f docker-compose.yml config
+        docker compose -f docker-compose.yml build
+
+    - name: Run tests
+      run: |
+        docker compose -f docker-compose.yml run --rm app \
+          pytest -v --cov=src --cov-report=xml
+      env:
+        TPM_DEVICE: "tcp://tpm-emulator:2321"
+
+    - name: Security scan
+      uses: returntocorp/semgrep-action@v1
