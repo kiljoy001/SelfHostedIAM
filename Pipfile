@@ -23,8 +23,6 @@ types-pika = "*"
 types-requests = "*"
 tox = "*"
 
-[requires]
-python_version = "3.9"
 
 [scripts]
 test = "pytest -v --cov=src --cov-report=xml"

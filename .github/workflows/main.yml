@@ -1,6 +1,15 @@
 name: TPM CI
 
-on: [push, pull_request]
+on:
+  push:
+    branches:
+      - '**'
+      - '!main'
+  
+  pull_request:
+    branches:
+      - '**'
+
 
 env:
   RABBITMQ_DEFAULT_USER: ${{ secrets.RABBITMQ_USER }}
