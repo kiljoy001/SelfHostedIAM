@@ -9,7 +9,7 @@ env:
 
 jobs:
   test:
-    runs-on: fedora-latest
+    runs-on: ubuntu-latest
     
     services:
       rabbitmq:
