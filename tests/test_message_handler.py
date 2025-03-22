@@ -1,6 +1,10 @@
 # tests/test_message_handler.py
 import pytest
-from your_module import TPMMessageHandler, ScriptRunner, BaseStateMachine
+from helper.finite_state_machine import BaseStateMachine
+from helper.script_runner import ScriptRunner
+from tpm.tpm_message_handler import TPMMessageHandler
+from helper.finite_state_machine import State
+from pathlib import Path  
 
 @pytest.fixture
 def tpm_handler():

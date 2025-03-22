@@ -2,7 +2,9 @@
 import pytest
 from unittest.mock import Mock, patch
 from pathlib import Path
-from your_module import TPMMessageHandler, BaseStateMachine, ScriptRunner
+from helper.finite_state_machine import BaseStateMachine, State
+from helper.script_runner import ScriptRunner
+from tpm.tpm_message_handler import TPMMessageHandler
 
 @pytest.fixture
 def tpm_handler():
@@ -13,11 +15,15 @@ def tpm_handler():
     runner = ScriptRunner(scripts)
     state_machine = BaseStateMachine()
     
-    return TPMMessageHandler(
-        script_runner=runner,
-        state_machine=state_machine,
-        host="localhost"
-    )
+    # Mock messaging infrastructure
+    with patch('pika.BlockingConnection'):
+        handler = TPMMessageHandler(
+            script_runner=runner,
+            state_machine=state_machine,
+            host="localhost"
+        )
+        handler.publish = Mock()  # Disable actual message publishing
+        yield handler
 
 def test_valid_command(tpm_handler):
     """Test successful command execution"""
@@ -26,12 +32,17 @@ def test_valid_command(tpm_handler):
         "args": ["--test-mode"]
     }
     
-    with patch('subprocess.run') as mock_run:
-        mock_run.return_value = Mock(stdout="OK", stderr="", returncode=0)
+    # Mock ScriptRunner instead of subprocess
+    with patch.object(tpm_handler.script_runner, 'execute') as mock_execute:
+        mock_execute.return_value = {
+            "success": True,
+            "output": "OK",
+            "error": ""
+        }
         tpm_handler.handle_tpm_command(test_msg)
         
     assert tpm_handler.state_machine.state == State.IDLE
-    assert "OK" in tpm_handler.messaging.last_response
+    assert "OK" in tpm_handler.last_response["output"]
 
 def test_unauthorized_command(tpm_handler):
     """Test blocked command execution"""
@@ -42,7 +53,7 @@ def test_unauthorized_command(tpm_handler):
     
     tpm_handler.handle_tpm_command(test_msg)
     
-    assert "not allowed" in tpm_handler.messaging.last_error
+    assert "not allowed" in tpm_handler.last_error
     assert tpm_handler.state_machine.state == State.IDLE
 
 def test_concurrent_commands(tpm_handler):
@@ -50,7 +61,12 @@ def test_concurrent_commands(tpm_handler):
     msg1 = {"action": "tpm_provision"}
     msg2 = {"action": "generate_cert"}
     
-    tpm_handler.handle_tpm_command(msg1)
+    # First command processing
+    with patch.object(tpm_handler.script_runner, 'execute') as mock_execute:
+        mock_execute.return_value = {"success": True}
+        tpm_handler.handle_tpm_command(msg1)
+    
+    # Second command should be blocked
     tpm_handler.handle_tpm_command(msg2)
     
-    assert "busy" in tpm_handler.messaging.last_error
+    assert "busy" in tpm_handler.last_error

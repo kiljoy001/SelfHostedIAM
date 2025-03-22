@@ -49,7 +49,7 @@ tpm2_startup -c
 if [ -n "$DEV_MODE" ]; then
     echo "🛠️  Running in DEVELOPMENT mode"
     INSTALL_CMD="pipenv install Pipfile --dev"
-    PYTEST_CMD="pytest"
+    PYTEST_CMD="pytest /tests"
 else
     echo "🚀 Running in PRODUCTION mode"
     INSTALL_CMD="pipenv install Pipfile"
@@ -60,6 +60,8 @@ eval $INSTALL_CMD
 
 chmod +x tpm_provisioning.sh tpm_self_signed_cert.sh tpm_random_number.sh
 pipenv shell
+
+eval $PYTEST_CMD
 
 # Drop into an interactive shell
 exec /bin/bash

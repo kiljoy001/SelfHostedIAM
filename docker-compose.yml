@@ -10,7 +10,7 @@ services:
     ports:
       - "15672:15672"
     volumes:
-      - rabbitmq_data:/var/lib/rabbitmq_data
+      - rabbitmq_data:/var/lib/rabbitmq
     networks:
       - tpm-net
     healthcheck:

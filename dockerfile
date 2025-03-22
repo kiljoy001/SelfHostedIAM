@@ -4,7 +4,7 @@ FROM fedora:41
 # Install dependencies
 RUN dnf install -y tpm2-tss tpm2-tss-fapi python3-pip pkg-config tpm2-tss-devel \
     python3-devel swtpm tpm2-abrmd dbus-daemon nmap-ncat tpm2-tss-engine openssl tpm2-openssl tpm2-tools \
-    glibc-langpack-en glibc-locale-source python3-setuptools
+    glibc-langpack-en glibc-locale-source
 RUN dnf install -y @development-tools
 RUN localedef -c -i en_US -f UTF-8 en_US.UTF-8
 RUN dnf clean all
@@ -20,10 +20,10 @@ RUN pip3 install tpm2-pytss pipenv
 COPY tpm2-abrmd.conf /etc/dbus-1/system.d/
 
 # Create a directory for your code
-WORKDIR /app
-COPY tpm /app
+WORKDIR /tpm
+COPY tpm /tpm
 COPY helper /helper
-COPY Pipfile /app
+COPY Pipfile /tpm
 COPY tests  /tests
 
 # Set python path to root
