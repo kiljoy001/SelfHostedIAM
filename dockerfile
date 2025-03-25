@@ -21,6 +21,7 @@ COPY tpm2-abrmd.conf /etc/dbus-1/system.d/
 
 # Create a directory for your code
 WORKDIR /tpm
+COPY install_rabbitmq.sh /tpm
 COPY tpm /tpm
 COPY helper /helper
 COPY Pipfile /tpm
