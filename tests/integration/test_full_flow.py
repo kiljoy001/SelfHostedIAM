@@ -64,37 +64,25 @@ def send_test_command(command: dict, secret: str = "test-secret"):
     with rabbitmq_connection() as connection:
         channel = connection.channel()
         
+        # Ensure queue exists
+        channel.queue_declare(queue='tpm.commands', durable=True)
+        
         # Serialize and sign message
         body = json.dumps(command).encode()
         signature = generate_hmac(secret, body)
         
-        # Try both direct publishing and exchange publishing
-        try:
-            # Direct to queue
-            channel.basic_publish(
-                exchange='',
-                routing_key='tpm.commands',
-                body=body,
-                properties=pika.BasicProperties(
-                    headers={'hmac': signature}
-                )
+        # Publish directly to queue
+        channel.basic_publish(
+            exchange='',  # Use default exchange
+            routing_key='tpm.commands',  # Routing key = queue name in default exchange
+            body=body,
+            properties=pika.BasicProperties(
+                headers={'hmac': signature}
             )
-            
-            # Via exchange with routing key
-            channel.basic_publish(
-                exchange='app_events',
-                routing_key='tpm.command.provision',
-                body=body,
-                properties=pika.BasicProperties(
-                    headers={'hmac': signature}
-                )
-            )
-            
-            logger.info("Command sent via both direct queue and exchange")
-            return True
-        except Exception as e:
-            logger.error(f"Error sending command: {e}")
-            return False
+        )
+        
+        logger.info("Command sent successfully")
+        return True
 
 def simulate_response(queue_name='tpm.results'):
     """Simulate a response by directly publishing to the result queue"""
@@ -106,6 +94,9 @@ def simulate_response(queue_name='tpm.results'):
         with rabbitmq_connection() as connection:
             channel = connection.channel()
             
+            # Make sure the queue exists
+            channel.queue_declare(queue=queue_name, durable=True)
+            
             # Create a mock result
             result = {
                 "success": True,
@@ -114,10 +105,10 @@ def simulate_response(queue_name='tpm.results'):
                 "command": "tpm_provision"
             }
             
-            # Publish to results queue
+            # Publish directly to queue (don't use exchange)
             channel.basic_publish(
-                exchange='',
-                routing_key=queue_name,
+                exchange='',  # Use default exchange
+                routing_key=queue_name,  # In default exchange, routing key = queue name
                 body=json.dumps(result).encode(),
                 properties=pika.BasicProperties(
                     headers={"hmac": generate_hmac("test-secret", json.dumps(result).encode())}

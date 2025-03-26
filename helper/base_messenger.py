@@ -1,10 +1,14 @@
+# helper/base_messenger.py
 import os
 import pika
 import json
 import hmac
 import hashlib
 import logging
-from typing import Callable, Optional
+import asyncio
+import threading
+from typing import Callable, Optional, Dict, Any
+from pika.adapters.asyncio_connection import AsyncioConnection
 
 class BaseMessageHandler:
     def __init__(self, host: str = None, secret_key: str = None, exchange: str = "app_events"):
@@ -27,6 +31,8 @@ class BaseMessageHandler:
         self.connection = None
         self.channel = None
         self.exchange = exchange
+        self._consuming = False
+        self._consume_thread = None
 
         # Determine host with multiple fallback options
         possible_hosts = [
@@ -36,7 +42,7 @@ class BaseMessageHandler:
             'rabbitmq',   # Common Docker service name
         ]
 
-        # Try to connect
+        # Connect to RabbitMQ
         self._connect_to_rabbitmq(possible_hosts)
         
         # Declare exchange if channel exists
@@ -107,13 +113,10 @@ class BaseMessageHandler:
         :param queue_name: Name of the queue to consume from
         :param callback: Callback function to process messages
         """
-        # Check if channel exists, but don't raise an exception in tests
+        # Check if channel exists
         if self.channel is None:
             logging.error("Cannot subscribe: No RabbitMQ channel available")
-            # In test environments, we don't want to fail the tests
-            if os.getenv("TEST_ENVIRONMENT") != "1":
-                raise RuntimeError("RabbitMQ channel not initialized")
-            return
+            raise RuntimeError("RabbitMQ channel not initialized")
 
         # Create a verified callback wrapper
         verified_callback = self._create_verified_callback(callback)
@@ -130,7 +133,7 @@ class BaseMessageHandler:
                 routing_key=routing_key
             )
 
-            # Consume messages with verified callback
+            # Setup consumer
             self.channel.basic_consume(
                 queue=queue_name,
                 on_message_callback=verified_callback
@@ -140,15 +143,13 @@ class BaseMessageHandler:
 
         except Exception as e:
             logging.error(f"Failed to subscribe to queue {queue_name}: {e}")
-            # Don't raise in test environment
-            if os.getenv("TEST_ENVIRONMENT") != "1":
-                raise
+            raise
 
     def _create_verified_callback(self, user_callback: Callable) -> Callable:
         """Factory method for creating verified callbacks"""
         def wrapper(channel, method, properties, body):
             # HMAC validation logic
-            received_hmac = properties.headers.get("hmac", "") if properties.headers else ""
+            received_hmac = properties.headers.get("hmac", "") if hasattr(properties, 'headers') and properties.headers else ""
             valid_hmac = hmac.new(
                 self.secret_key,
                 body,
@@ -161,19 +162,31 @@ class BaseMessageHandler:
 
             try:
                 message = json.loads(body)
-                user_callback(message)
-                channel.basic_ack(method.delivery_tag)
+                # Process in a separate thread to avoid blocking
+                threading.Thread(target=self._process_message, 
+                                args=(user_callback, message, channel, method.delivery_tag)).start()
             except json.JSONDecodeError:
                 channel.basic_reject(method.delivery_tag, requeue=False)
         
         return wrapper
-        
+    
+    def _process_message(self, callback, message, channel, delivery_tag):
+        """Process a message in a separate thread"""
+        try:
+            # Call the user callback
+            callback(message)
+            # Acknowledge the message
+            channel.basic_ack(delivery_tag)
+        except Exception as e:
+            logging.error(f"Error processing message: {e}")
+            channel.basic_nack(delivery_tag, requeue=False)
+
     def publish(self, routing_key: str, message: dict):
         """
         Publish a message to RabbitMQ
 
         :param routing_key: Routing key for the message
-        :param message: Message to publish
+        :param message: Message payload
         """
         if not self.channel:
             logging.error("Cannot publish: No RabbitMQ channel available")
@@ -206,3 +219,81 @@ class BaseMessageHandler:
         except Exception as e:
             logging.error(f"Error publishing message: {e}")
             return False
+    
+    def start_consuming(self, non_blocking=True):
+        """
+        Start consuming messages
+        
+        :param non_blocking: If True, runs in a separate thread; if False, blocks
+        """
+        if self._consuming:
+            logging.warning("Already consuming messages")
+            return False
+            
+        if not self.channel:
+            logging.error("Cannot start consuming: No channel available")
+            return False
+            
+        if non_blocking:
+            # Start in a separate thread
+            self._consume_thread = threading.Thread(target=self._consume_loop)
+            self._consume_thread.daemon = True
+            self._consume_thread.start()
+            self._consuming = True
+            logging.info("Started message consumption in background thread")
+            return True
+        else:
+            # Blocking consumption
+            try:
+                self._consuming = True
+                logging.info("Starting message consumption (blocking)")
+                self.channel.start_consuming()
+                return True
+            except Exception as e:
+                self._consuming = False
+                logging.error(f"Error in message consumption: {e}")
+                return False
+    
+    def _consume_loop(self):
+        """Background thread for consuming messages"""
+        try:
+            self.channel.start_consuming()
+        except Exception as e:
+            logging.error(f"Error in consume loop: {e}")
+        finally:
+            self._consuming = False
+    
+    def stop_consuming(self):
+        """Stop consuming messages"""
+        if not self._consuming:
+            logging.warning("Not currently consuming messages")
+            return True
+            
+        if not self.channel:
+            logging.error("Cannot stop consuming: No channel available")
+            return False
+            
+        try:
+            self.channel.stop_consuming()
+            if self._consume_thread and self._consume_thread.is_alive():
+                self._consume_thread.join(timeout=2)
+            self._consuming = False
+            logging.info("Stopped message consumption")
+            return True
+        except Exception as e:
+            logging.error(f"Error stopping consumption: {e}")
+            return False
+    
+    def close(self):
+        """Close the connection"""
+        self.stop_consuming()
+        
+        if self.connection and self.connection.is_open:
+            try:
+                self.connection.close()
+                logging.info("Connection closed")
+                return True
+            except Exception as e:
+                logging.error(f"Error closing connection: {e}")
+                return False
+        return True

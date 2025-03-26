@@ -1,52 +1,92 @@
+# helper/script_runner.py
+import os
 import subprocess
 import logging
-from pathlib import Path
-from typing import List, Dict
+import asyncio
+from typing import Dict, List, Any
+
+logger = logging.getLogger(__name__)
 
 class ScriptRunner:
-    def __init__(self, allowed_scripts: Dict[str, Path]):
-        self.allowed_scripts = allowed_scripts
-        self.logger = logging.getLogger(self.__class__.__name__)
-
-    def _sanitize_args(self, args: List[str]) -> List[str]:
-        """Allow only alphanumeric and safe characters"""
-        return [a for a in args if all(c.isalnum() or c in '-_./' for c in a)]
-
-    def execute(self, script_name: str, args: List[str] = None) -> dict:
+    """Utility for running external scripts securely"""
+    
+    def __init__(self, script_paths: Dict[str, str]):
+        """Initialize with mapping of script names to file paths"""
+        self.allowed_scripts = {}
+        
+        # Register allowed scripts
+        for script_name, script_path in script_paths.items():
+            self.register_script(script_name, script_path)
+    
+    def register_script(self, script_name: str, script_path: str) -> bool:
+        """Register a script as allowed to run"""
+        if not os.path.isfile(script_path):
+            logger.warning(f"Script file not found: {script_path}")
+            return False
+            
+        # Store the absolute path
+        self.allowed_scripts[script_name] = os.path.abspath(script_path)
+        return True
+    
+    def execute(self, script_name: str, args: List[str] = None) -> Dict[str, Any]:
+        """
+        Execute a registered script with provided arguments
+        
+        Args:
+            script_name: Name of the script to run
+            args: Command-line arguments to pass to the script
+            
+        Returns:
+            Dictionary with execution results
+        """
+        # Verify script is authorized
         if script_name not in self.allowed_scripts:
-            self.logger.error("Attempted to run unauthorized script: %s", script_name)
+            logger.error(f"Attempted to run unauthorized script: {script_name}")
             return {"success": False, "error": "Unauthorized script"}
-
+            
         script_path = self.allowed_scripts[script_name]
-        if not script_path.exists():
-            return {"success": False, "error": "Script not found"}
-
-        safe_args = self._sanitize_args(args or [])
+        args = args or []
         
         try:
+            # Run the script with arguments
             result = subprocess.run(
-                [str(script_path)] + safe_args,
-                check=True,
+                [script_path] + args,
                 capture_output=True,
                 text=True,
-                timeout=30  # Prevent hanging scripts
+                check=True
             )
+            
+            # Process output
             return {
                 "success": True,
                 "output": result.stdout,
-                "artifacts": self._find_artifacts(script_name)
+                "error": result.stderr,
+                "command": script_name,
+                "args": args
             }
         except subprocess.CalledProcessError as e:
-            self.logger.error("Script failed: %s", e.stderr)
-            return {"success": False, "error": e.stderr}
-        except subprocess.TimeoutExpired:
-            return {"success": False, "error": "Script timed out"}
-
-    def _find_artifacts(self, script_name: str) -> dict:
-        """Define expected output files per script"""
-        artifacts = {
-            "tpm_provision": ["signing_key.pem", "handle.txt"],
-            "generate_cert": ["certs/cert.pem", "certs/tpm.key"],
-            "random_number": ["tpm_random.bin"]
-        }
-        return {name: Path(name).exists() for name in artifacts.get(script_name, [])}
+            return {
+                "success": False,
+                "output": e.stdout,
+                "error": e.stderr or str(e),
+                "command": script_name,
+                "args": args,
+                "returncode": e.returncode
+            }
+        except Exception as e:
+            return {
+                "success": False,
+                "error": str(e),
+                "command": script_name,
+                "args": args
+            }
+    
+    async def execute_async(self, script_name: str, args: List[str] = None) -> Dict[str, Any]:
+        """
+        Execute a script asynchronously
+        
+        This runs the actual execution in a thread pool to avoid
+        blocking the event loop.
+        """
+        loop = asyncio.get_event_loop()
+        return await loop.run_in_executor(None, self.execute, script_name, args)
