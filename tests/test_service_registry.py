@@ -75,7 +75,7 @@ class TestServiceRegistry:
         # Verify results
         assert result is True, "Listener registration should succeed"
         assert "test_event" in registry.event_listeners, "Event type should be in registry"
-        assert registry.event_listeners["test_event"][0] == mock_listener, "Listener should be stored"
+        assert registry.event_listeners["test_event"][0] == {'is_async': False, 'listener':mock_listener }, "Listener should be stored"
         
         # Test duplicate registration
         result = registry.register_event_listener("test_event", mock_listener)
@@ -115,7 +115,7 @@ class TestServiceRegistry:
         service2 = Mock()
         service2.start = Mock(return_value=True)
         
-        service3 = Mock()  # Service without start method
+        service3 = Mock(spec=[])  # Service without start method
         
         # Register the services
         registry.register_service("service1", service1)
@@ -144,7 +144,7 @@ class TestServiceRegistry:
         service2 = Mock()
         service2.stop = Mock(return_value=True)
         
-        service3 = Mock()  # Service without stop method
+        service3 = Mock(spec=[])  # Service without stop method
         
         # Register the services
         registry.register_service("service1", service1)

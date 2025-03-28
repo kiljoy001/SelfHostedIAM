@@ -89,23 +89,24 @@ class ServiceRegistry:
         return self.register_message_handler(routing_key, handler, queue_name)
     
     def register_event_listener(self, event_type: str, 
-                               listener: Union[Callable, Coroutine]) -> bool:
-        """Register an event listener"""
-        with self._lock:
-            if event_type not in self.event_listeners:
-                self.event_listeners[event_type] = []
-            
-            # Check if listener is already registered
-            if listener in self.event_listeners[event_type]:
-                logger.warning(f"Listener already registered for {event_type}")
-                return False
-            
-            self.event_listeners[event_type].append({
-                "listener": listener,
-                "is_async": asyncio.iscoroutinefunction(listener)
-            })
-            logger.info(f"Registered event listener for {event_type}")
-            return True
+                           listener: Union[Callable, Coroutine]) -> bool:
+     """Register an event listener"""
+     with self._lock:
+         if event_type not in self.event_listeners:
+             self.event_listeners[event_type] = []
+         
+         # Check if listener is already registered
+         for existing_listener_info in self.event_listeners[event_type]:
+             if existing_listener_info["listener"] == listener:
+                 logger.warning(f"Listener already registered for {event_type}")
+                 return False
+         
+         self.event_listeners[event_type].append({
+             "listener": listener,
+             "is_async": asyncio.iscoroutinefunction(listener)
+         })
+         logger.info(f"Registered event listener for {event_type}")
+         return True
     
     async def register_event_listener_async(self, event_type: str, 
                                           listener: Union[Callable, Coroutine]) -> bool:

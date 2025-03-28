@@ -96,16 +96,16 @@ class TPMService:
             return True
         
         logger.info("Stopping TPM service")
+        success = False
         if self.message_handler:
             try:
-                result = self.message_handler.stop_consuming()
-                if result:
-                    self.active = False
-                return result
+                success = self.message_handler.stop_consuming()
             except Exception as e:
                 logger.error(f"Error stopping TPM service: {e}")
-                return False
-        return False
+        
+        # Always set to inactive, regardless of success or failure
+        self.active = False
+        return success
     
     async def stop_async(self) -> bool:
         """Stop the TPM service asynchronously"""
