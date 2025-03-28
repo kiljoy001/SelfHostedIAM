@@ -77,5 +77,5 @@ eval $INSTALL_CMD
 chmod +x tpm_provisioning.sh tpm_self_signed_cert.sh tpm_random_number.sh
 chmod +x /tests/mock_scripts/*.sh
 pipenv run pytest /tests/ -v
-pipenv shell
+
 
