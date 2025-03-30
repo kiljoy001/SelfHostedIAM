@@ -53,9 +53,15 @@ class TPMService:
             "get_random": Path(script_dir) / "tpm_random_number.sh"
         })
         
+        script_hashes = self.config.get('script_hashes', {
+        "tpm_provision":"56175ef85b51d414f7cc4cf7da5cc6c5c65fd59d4de74431ea3ccd9bd80e3bec",
+        "generate_cert":"019325eca0c5748aa6079fd99eabe64f67d0b4573a05afec39f0e6f627840d76",
+        "get_random":"ad8ff1334920941997f18d5da362abcf80bea5df5445ccc0d6bec4e8cb5612dc"
+        })
+        
         # Create components
         self.state_machine = BaseStateMachine()
-        self.script_runner = ScriptRunner(script_paths)
+        self.script_runner = ScriptRunner(script_paths, script_hashes)
         
         # Create message handler
         self.message_handler = TPMMessageHandler(
@@ -94,9 +100,9 @@ class TPMService:
         if not self.active:
             logger.warning("TPM service not running")
             return True
-        
+
         logger.info("Stopping TPM service")
-        
+
         try:
             if self.message_handler:
                 try:
@@ -105,7 +111,7 @@ class TPMService:
                     return True
                 except Exception as e:
                     logger.error(f"Error during normal stop: {e}")
-                    
+
                     # If stop_consuming fails, try to clean up just this service's channel
                     try:
                         if hasattr(self.message_handler, 'channel') and self.message_handler.channel:

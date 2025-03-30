@@ -20,6 +20,7 @@ class TestTPMRegistryIntegration:
     def registry(self):
         """Fixture for a service registry"""
         return ServiceRegistry()
+
     
     @pytest.fixture
     def mock_scripts(self):
@@ -45,13 +46,21 @@ class TestTPMRegistryIntegration:
             # Make the scripts executable
             os.chmod(path, 0o755)
         
-        return script_paths
+        import hashlib
+        script_hashes = {}
+        for name, path in script_paths.items():
+            with open(path, 'rb') as f:
+                content = f.read()
+                script_hashes[name] = hashlib.sha256(content).hexdigest()
+    
+        return {"paths": script_paths, "hashes": script_hashes}
     
     def test_basic_service_registration(self, registry, mock_scripts):
         """Test basic registration of TPM service with registry"""
         # Create service with registry
         config = {
-            'script_paths': mock_scripts,
+            'script_paths': mock_scripts["paths"],
+            'script_hashes': mock_scripts["hashes"],
             'rabbitmq_host': 'localhost'
         }
         
@@ -84,7 +93,10 @@ class TestTPMRegistryIntegration:
     def test_service_lifecycle_through_registry(self, registry, mock_scripts):
         """Test starting and stopping TPM service through registry"""
         # Create service with registry
-        config = {'script_paths': mock_scripts, 'rabbitmq_host': 'localhost'}
+        config = {'script_paths': mock_scripts["paths"],
+        'script_hashes': mock_scripts["hashes"],
+         'rabbitmq_host': 'localhost'
+         }
         tpm_service = TPMService(config)
         registry.register_service("tpm", tpm_service)
 
@@ -125,7 +137,10 @@ class TestTPMRegistryIntegration:
         registry.register_event_listener('tpm.state_change', state_change_listener)
         
         # Create service with registry
-        config = {'script_paths': mock_scripts, 'rabbitmq_host': 'localhost'}
+        config = {'script_paths': mock_scripts["paths"],
+        'script_hashes': mock_scripts["hashes"],
+        'rabbitmq_host': 'localhost'
+         }
         tpm_service = TPMService(config)
         registry.register_service("tpm", tpm_service)
         
@@ -141,7 +156,8 @@ class TestTPMRegistryIntegration:
         """Test executing TPM commands through a service registered with registry"""
         # Create service with registry
         config = {
-            'script_paths': mock_scripts,
+            'script_paths': mock_scripts["paths"],
+            'script_hashes': mock_scripts["hashes"],
             'rabbitmq_host': 'localhost'
         }
         
@@ -168,7 +184,8 @@ class TestTPMRegistryIntegration:
         """Test sending messages through a service registered with registry"""
         # Create service with registry
         config = {
-            'script_paths': mock_scripts,
+            'script_paths': mock_scripts["paths"],
+            'script_hashes': mock_scripts["hashes"],
             'rabbitmq_host': 'localhost',
             'exchange': 'test-exchange'
         }
@@ -202,7 +219,10 @@ class TestTPMRegistryIntegration:
     async def test_async_operations_with_registry(self, registry, mock_scripts):
         """Test async operations with TPM service and registry"""
         # Create service with registry
-        config = {'script_paths': mock_scripts, 'rabbitmq_host': 'localhost'}
+        config = {'script_paths': mock_scripts["paths"], 
+        'script_hashes': mock_scripts["hashes"],
+        'rabbitmq_host': 'localhost'
+        }
         tpm_service = TPMService(config)
         registry.register_service("tpm", tpm_service)
 
@@ -250,7 +270,10 @@ class TestTPMRegistryIntegration:
     def test_multiple_services_with_registry(self, registry, mock_scripts):
         """Test registry handling multiple services including TPM"""
         # Create TPM service
-        config = {'script_paths': mock_scripts, 'rabbitmq_host': 'localhost'}
+        config = {'script_paths': mock_scripts["paths"],
+        'script_hashes': mock_scripts["hashes"],
+        'rabbitmq_host': 'localhost'
+        }
         tpm_service = TPMService(config)
         registry.register_service("tpm", tpm_service)
         

@@ -39,6 +39,10 @@ class TestMessageHandler:
             "tpm_provision": Path("/tests/mock_scripts/tpm_provisioning.sh"),
             "generate_cert": Path("/tests/mock_scripts/tpm_self_signed_cert.sh")
         }
+        hashes = {
+            "tpm_provision":"925c7d4f5d4d4cd42cba6fcb5d8905748d85eacc031464922165168e29c150bf",
+            "generate_cert":"8130adae9348b77b7056a65083cf9da8f2dab77e1b2f216d10dd34c07c4c8424"
+        }
         
         # Verify scripts exist and are executable
         for name, path in scripts.items():
@@ -60,7 +64,7 @@ class TestMessageHandler:
                 logger.info(f"Created mock script at {path}")
         
         # Create handler components
-        runner = ScriptRunner(scripts)
+        runner = ScriptRunner(scripts, hashes)
         state_machine = BaseStateMachine()
         
         # Create the handler
