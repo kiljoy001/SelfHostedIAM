@@ -96,16 +96,29 @@ class TPMService:
             return True
         
         logger.info("Stopping TPM service")
-        success = False
-        if self.message_handler:
-            try:
-                success = self.message_handler.stop_consuming()
-            except Exception as e:
-                logger.error(f"Error stopping TPM service: {e}")
         
-        # Always set to inactive, regardless of success or failure
-        self.active = False
-        return success
+        try:
+            if self.message_handler:
+                try:
+                    # Try normal shutdown - this should close channels but not connections
+                    result = self.message_handler.stop_consuming()
+                    return True
+                except Exception as e:
+                    logger.error(f"Error during normal stop: {e}")
+                    
+                    # If stop_consuming fails, try to clean up just this service's channel
+                    try:
+                        if hasattr(self.message_handler, 'channel') and self.message_handler.channel:
+                            self.message_handler.channel.close()
+                        return True
+                    except Exception as e2:
+                        logger.error(f"Failed to close channel: {e2}")
+                        # Don't close the connection as it may be shared
+                        return False
+            return True
+        finally:
+            # Always set to inactive regardless of success/failure
+            self.active = False
     
     async def stop_async(self) -> bool:
         """Stop the TPM service asynchronously"""

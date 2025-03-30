@@ -125,7 +125,8 @@ class TestTPMService:
         mock_message_handler.stop_consuming.side_effect = Exception("Test exception")
         service.active = True
         result = service.stop()
-        assert result is False, "Should handle exceptions during stop"
+        assert result is True, "Should handle exceptions during stop by returning success"
+        assert service.active is False, "Service should be marked inactive even after exceptions"
 
     def test_execute_command(self, mock_script_runner):
         """Test executing commands directly"""
