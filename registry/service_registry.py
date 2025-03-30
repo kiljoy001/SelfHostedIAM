@@ -20,14 +20,13 @@ class ServiceRegistry:
         self._lock = threading.RLock()  # Thread-safe operations
         self.loop = None  # AsyncIO event loop for async operations
         
-        # Try to get the current event loop or create a new one
+        # Try to get the current running loop or create a new one
         try:
-            self.loop = asyncio.get_event_loop()
+            self.loop = asyncio.get_running_loop()
         except RuntimeError:
-            # No event loop in this thread, create a new one
+            # No running loop in this thread, create a new one
             self.loop = asyncio.new_event_loop()
             asyncio.set_event_loop(self.loop)
-    
     def register_service(self, service_name: str, service: Any) -> bool:
         """
         Register a service with the registry.
@@ -138,7 +137,7 @@ class ServiceRegistry:
                     if self.loop is None or self.loop.is_closed():
                         # Ensure we have a valid loop
                         try:
-                            self.loop = asyncio.get_event_loop()
+                            self.loop = asyncio.get_running_loop()
                         except RuntimeError:
                             # Create a new loop if none is available
                             self.loop = asyncio.new_event_loop()
@@ -183,7 +182,7 @@ class ServiceRegistry:
                     await listener(*args, **kwargs)
                 else:
                     # Run sync listeners in the executor to avoid blocking
-                    await asyncio.get_event_loop().run_in_executor(
+                    await asyncio.get_running_loop().run_in_executor(
                         None, listener, *args, **kwargs
                     )
                 count += 1
@@ -271,7 +270,7 @@ class ServiceRegistry:
         """Helper to start a synchronous service in an executor"""
         try:
             logger.info(f"Starting service in executor: {name}")
-            loop = asyncio.get_event_loop()
+            loop = asyncio.get_running_loop()
             return await loop.run_in_executor(None, service.start)
         except Exception as e:
             logger.error(f"Error in sync start of service {name}: {e}")

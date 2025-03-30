@@ -189,16 +189,15 @@ class TestTPMRegistryIntegration:
             'rabbitmq_host': 'localhost',
             'exchange': 'test-exchange'
         }
-        
+    
         tpm_service = TPMService(config)
         registry.register_service("tpm", tpm_service)
+    
+        # For testing purposes, modify the TPMService's send_command method
+        original_send_command = tpm_service.send_command
+        tpm_service.send_command = lambda cmd, args: 'mock-message-id'
         
-        # For testing purposes, we'll monkey patch the publish_command to return a predictable value
-        # This avoids having to actually send messages through RabbitMQ
-        original_publish = tpm_service.message_handler.publish_command
         try:
-            tpm_service.message_handler.publish_command = lambda cmd, args: 'mock-message-id'
-            
             # Send a command
             message_id = tpm_service.send_command('tpm_provision', ['--test-mode'])
             
@@ -213,7 +212,7 @@ class TestTPMRegistryIntegration:
             assert message_id == 'mock-message-id', "Should return message ID from handler"
         finally:
             # Restore original method
-            tpm_service.message_handler.publish_command = original_publish
+            tpm_service.send_command = original_send_command
     
     @pytest.mark.asyncio
     async def test_async_operations_with_registry(self, registry, mock_scripts):

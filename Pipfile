@@ -22,7 +22,7 @@ types-pika = "*"
 types-requests = "*"
 tox = "*"
 setuptools = "*"
-
+hypothesis = "*"
 
 [scripts]
 test = "pytest -v --cov=src --cov-report=xml"

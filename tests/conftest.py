@@ -23,9 +23,8 @@ async def async_tpm_service():
     # Clean up
     await service.stop_async()
 
-@pytest.fixture
-def event_loop():
-    """Create an instance of the default event loop for each test"""
-    loop = asyncio.get_event_loop_policy().new_event_loop()
-    yield loop
-    loop.close()
+# This is the recommended approach
+@pytest.fixture(scope="function")
+def event_loop_policy():
+    """Return the policy to use for creating event loops."""
+    return asyncio.DefaultEventLoopPolicy()

@@ -5,6 +5,7 @@ import hashlib
 import time
 import logging
 import pika
+import pytest
 from pathlib import Path
 from tpm.tpm_message_handler import TPMMessageHandler
 from helper.finite_state_machine import BaseStateMachine
@@ -23,10 +24,17 @@ class TestMessageHandler:
     4. Can be safely started and stopped
     """
     
-    def __init__(self):
+    @pytest.fixture(autouse=True)
+    def setup_handler(self):
+        """Setup the test message handler (replaces __init__)"""
         self.running = False
         self.thread = None
         self.handler = None
+        
+        # Ensure cleanup after test
+        yield
+        if self.running:
+            self.stop()
     
     def start(self):
         """Start the test message handler in a background thread"""
@@ -127,16 +135,3 @@ class TestMessageHandler:
             
         except Exception as e:
             logger.error(f"Error stopping handler: {e}")
-
-# Example usage - can be imported and used in tests
-if __name__ == "__main__":
-    handler = TestMessageHandler()
-    if handler.start():
-        try:
-            # Keep it running until interrupted
-            while handler.running:
-                time.sleep(1)
-        except KeyboardInterrupt:
-            pass
-        finally:
-            handler.stop()
