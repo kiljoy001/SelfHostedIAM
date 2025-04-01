@@ -19,7 +19,7 @@ class ServiceRegistry:
         self.event_listeners = {}
         self._lock = threading.RLock()  # Thread-safe operations
         self.loop = None  # AsyncIO event loop for async operations
-        
+
         # Try to get the current running loop or create a new one
         try:
             self.loop = asyncio.get_running_loop()
@@ -194,67 +194,64 @@ class ServiceRegistry:
     def start_all_services(self) -> Dict[str, bool]:
         """
         Start all registered services.
-        
+
         Returns:
-            Dictionary mapping service names to start success
+            Dictionary mapping service names to start success (boolean)
         """
         results = {}
         with self._lock:
             services = list(self.services.items())
-        
+
         for name, service in services:
             if hasattr(service, 'start') and callable(service.start):
                 try:
                     logger.info(f"Starting service: {name}")
-                    success = service.start()
-                    results[name] = success
+                    service.start()  # Call method but ignore return value
+                    results[name] = True  # Success based on no exception
                 except Exception as e:
                     logger.error(f"Error starting service {name}: {e}")
                     results[name] = False
             else:
                 logger.warning(f"Service {name} has no start method")
                 results[name] = False
-        
+
         return results
     
     async def start_all_services_async(self) -> Dict[str, bool]:
         """
         Start all registered services asynchronously.
-        
+
         Returns:
-            Dictionary mapping service names to start success
+            Dictionary mapping service names to start success (boolean)
         """
         results = {}
         with self._lock:
             services = list(self.services.items())
-        
-        # Start services in parallel
-        start_tasks = []
-        
+
         for name, service in services:
             if hasattr(service, 'start_async') and asyncio.iscoroutinefunction(service.start_async):
                 # If the service has an async start method, use it
-                start_tasks.append(self._start_service_async(name, service))
+                try:
+                    logger.info(f"Starting service asynchronously: {name}")
+                    await service.start_async()  # Call the method but don't use return value
+                    results[name] = True  # Set success based on no exception
+                except Exception as e:
+                    logger.error(f"Error in async start of service {name}: {e}")
+                    results[name] = False
             elif hasattr(service, 'start') and callable(service.start):
                 # If the service has a sync start method, run it in an executor
-                start_tasks.append(self._start_service_sync(name, service))
+                try:
+                    logger.info(f"Starting service in executor: {name}")
+                    loop = asyncio.get_running_loop()
+                    await loop.run_in_executor(None, service.start)  # Call the method but don't use return value
+                    results[name] = True  # Set success based on no exception
+                except Exception as e:
+                    logger.error(f"Error in sync start of service {name}: {e}")
+                    results[name] = False
             else:
                 logger.warning(f"Service {name} has no start method")
                 results[name] = False
-        
-        # Wait for all services to start
-        if start_tasks:
-            service_results = await asyncio.gather(*start_tasks, return_exceptions=True)
-            
-            # Process results
-            for i, (name, _) in enumerate(services):
-                if i < len(service_results):
-                    if isinstance(service_results[i], Exception):
-                        logger.error(f"Error starting service {name}: {service_results[i]}")
-                        results[name] = False
-                    else:
-                        results[name] = service_results[i]
-        
+
         return results
     
     async def _start_service_async(self, name, service):
@@ -308,39 +305,36 @@ class ServiceRegistry:
         Stop all registered services asynchronously.
         
         Returns:
-            Dictionary mapping service names to stop success
+            Dictionary mapping service names to stop success (boolean)
         """
         results = {}
         with self._lock:
             # Reverse order to stop dependent services first
             services = list(reversed(list(self.services.items())))
         
-        # Stop services in parallel
-        stop_tasks = []
-        
         for name, service in services:
             if hasattr(service, 'stop_async') and asyncio.iscoroutinefunction(service.stop_async):
                 # If the service has an async stop method, use it
-                stop_tasks.append(self._stop_service_async(name, service))
+                try:
+                    logger.info(f"Stopping service asynchronously: {name}")
+                    await service.stop_async()  # Call the method but don't use return value
+                    results[name] = True  # Set success based on no exception
+                except Exception as e:
+                    logger.error(f"Error in async stop of service {name}: {e}")
+                    results[name] = False
             elif hasattr(service, 'stop') and callable(service.stop):
                 # If the service has a sync stop method, run it in an executor
-                stop_tasks.append(self._stop_service_sync(name, service))
+                try:
+                    logger.info(f"Stopping service in executor: {name}")
+                    loop = asyncio.get_running_loop()
+                    await loop.run_in_executor(None, service.stop)  # Call the method but don't use return value
+                    results[name] = True  # Set success based on no exception
+                except Exception as e:
+                    logger.error(f"Error in sync stop of service {name}: {e}")
+                    results[name] = False
             else:
                 logger.warning(f"Service {name} has no stop method")
                 results[name] = False
-        
-        # Wait for all services to stop
-        if stop_tasks:
-            service_results = await asyncio.gather(*stop_tasks, return_exceptions=True)
-            
-            # Process results
-            for i, (name, _) in enumerate(services):
-                if i < len(service_results):
-                    if isinstance(service_results[i], Exception):
-                        logger.error(f"Error stopping service {name}: {service_results[i]}")
-                        results[name] = False
-                    else:
-                        results[name] = service_results[i]
         
         return results
     

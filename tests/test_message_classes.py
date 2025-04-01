@@ -1,5 +1,5 @@
 from hypothesis import given, strategies as st
-from helper.message import CommandMessage, MessageFactory, ResponseMessage
+from helper.message import CommandMessage, MessageFactory, ResponseMessage, BaseMessage
 import pytest
 
 # Define strategies for generating message data
@@ -100,3 +100,60 @@ def test_message_factory_handles_invalid_data(invalid_data):
     except (ValueError, TypeError) as e:
         # Successfully caught error - this is expected
         pass
+
+# Basic tests
+def test_basic_message_creation():
+    msg = BaseMessage(id="test-id", source="test-source")
+    assert msg.id == "test-id"
+    assert msg.source == "test-source"
+
+# Hypothesis property-based tests
+
+@given(
+    command=st.text(min_size=1, max_size=100),
+    args=st.lists(st.text(min_size=0, max_size=100), min_size=0, max_size=10),
+    source=st.text(min_size=1, max_size=50),
+    target=st.text(min_size=1, max_size=50),
+    correlation_id=st.one_of(st.none(), st.text(min_size=1, max_size=50))
+)
+def test_command_message_serialization(command, args, source, target, correlation_id):
+    """Test message serialization with diverse content"""
+    # Create message with valid fields only
+    msg_data = {
+        "command": command,
+        "args": args,
+        "source": source,
+        "target": target
+    }
+    
+    # Add optional correlation_id if it's not None
+    if correlation_id is not None:
+        msg_data["correlation_id"] = correlation_id
+    
+    # Create message with proper fields
+    msg = CommandMessage(**msg_data)
+    
+    # Serialize to dict
+    data = msg.to_dict()
+    
+    # Verify message properties are preserved
+    assert data["command"] == command
+    assert data["args"] == args
+    assert data["source"] == source
+    assert data["target"] == target
+    if correlation_id is not None:
+        assert data["correlation_id"] == correlation_id
+    
+    # Verify message type is included
+    assert data["message_type"] == "command"
+        
+    # Convert back to object
+    restored = MessageFactory.create_from_dict(data)
+    
+    # Verify properties match original
+    assert restored.command == command
+    assert restored.args == args
+    assert restored.source == source
+    assert restored.target == target
+    if correlation_id is not None:
+        assert restored.correlation_id == correlation_id

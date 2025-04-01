@@ -88,7 +88,7 @@ class TPMService:
             return result
         else:
             logger.error("Cannot start TPM service: No message handler or channel")
-            return False
+            return False  # Return False when channel is None
     
     async def start_async(self) -> bool:
         """Start the TPM service asynchronously"""
@@ -196,37 +196,34 @@ class TPMService:
     def emit_event(self, event_type: str, *args, **kwargs):
         """
         Emit an event to all registered listeners
-        
+
         Args:
             event_type: Type of event to emit
             args, kwargs: Arguments to pass to listeners
         """
         if not hasattr(self, '_event_listeners') or event_type not in self._event_listeners:
             return 0
-            
+
         count = 0
         for listener in self._event_listeners[event_type]:
             try:
                 if asyncio.iscoroutinefunction(listener):
-                    # For async listeners, we need to schedule them
-                    if self.loop is None:
-                        # Ensure we have a loop
-                        try:
-                            self.loop = asyncio.get_event_loop()
-                        except RuntimeError:
-                            # Create a new loop if none is available
-                            self.loop = asyncio.new_event_loop()
-                            asyncio.set_event_loop(self.loop)
-                    
-                    # Schedule the async callback
-                    asyncio.run_coroutine_threadsafe(
-                        listener(*args, **kwargs), self.loop
-                    )
+                    # For async listeners, schedule but don't create new loops
+                    if self.loop is None or self.loop.is_closed():
+                        # Use get_event_loop_policy() to avoid creating multiple loops
+                        self.loop = asyncio.get_event_loop_policy().get_event_loop()
+
+                    # Use create_task instead when possible for better cleanup
+                    if self.active:  # Only schedule if service is active
+                        asyncio.run_coroutine_threadsafe(
+                            listener(*args, **kwargs), self.loop
+                        )
+                        count += 1
                 else:
                     # For synchronous listeners, just call directly
                     listener(*args, **kwargs)
-                count += 1
+                    count += 1
             except Exception as e:
                 logger.error(f"Error in event listener for {event_type}: {e}")
-        
+
         return count

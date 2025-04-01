@@ -1,4 +1,3 @@
-# helper/script_runner.py
 import os
 import subprocess
 import logging
@@ -32,6 +31,11 @@ class ScriptRunner:
     
     def register_script(self, script_name: str, script_path: str) -> bool:
         """Register a script as allowed to run and store its hash"""
+        # Check if script already exists - reject duplicate registrations
+        if script_name in self.allowed_scripts:
+            logger.warning(f"Script with name '{script_name}' is already registered")
+            return False
+            
         if not os.path.isfile(script_path):
             logger.warning(f"Script file not found: {script_path}")
             return False
