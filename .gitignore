@@ -172,3 +172,9 @@ cython_debug/
 
 #Docker Volumes
 tpmdata/
+
+# In .gitignore
+tests/mock_scripts/signing_key.pem
+tests/mock_scripts/handle.txt
+tests/mock_scripts/tpm_random.bin
+tests/mock_scripts/certs/

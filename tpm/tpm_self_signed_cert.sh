@@ -1,7 +1,5 @@
 #!/bin/bash
 
-# --- TPM Provision Check ---
-#!/bin/bash
 set -e
 
 # Configuration

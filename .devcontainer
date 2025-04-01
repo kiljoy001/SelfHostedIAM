@@ -1,9 +1,0 @@
-{
-  "name": "TPM Dev Container",
-  "dockerFile": "Dockerfile",
-  "runArgs": ["--cap-add=SYS_PTRACE"],  
-  "mounts": ["source=${localWorkspaceFolder},target=/workspace,type=bind"],
-  "settings": {
-    "terminal.integrated.shell.linux": "/bin/bash"
-  },
-  "extensions": ["ms-python.python"] 

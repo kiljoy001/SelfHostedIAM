@@ -1,0 +1,38 @@
+name: TPM CI
+
+on:
+  push:
+    branches:
+      - '**'
+      - '!main'
+  
+  pull_request:
+    branches:
+      - '**'
+
+env:
+  HMAC_SECRET: ${{ secrets.HMAC_SECRET }}
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+
+    steps:
+    - name: Checkout code
+      uses: actions/checkout@v4
+
+    - name: Create tpmdata directory
+      run: mkdir -p ./tpmdata
+
+    - name: Run tests with Docker
+      run: |
+        docker run \
+          -e DEV_MODE=1 \
+          -e UNITTEST_MODE=1 \
+          -e HMAC_SECRET=${{ secrets.HMAC_SECRET || 'pishposh' }} \
+          --privileged \
+          -v ${{ github.workspace }}/tpmdata:/tpmdata \
+          kiljoy001/selfhostediam:dev-latest
+
+    - name: Security scan
+      uses: returntocorp/semgrep-action@v1
