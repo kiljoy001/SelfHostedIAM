@@ -27,6 +27,7 @@ COPY helper /helper
 COPY Pipfile /tpm
 COPY tests  /tests
 COPY registry /registry
+COPY emercoin /emercoin
 
 # Set python path to root
 ENV PYTHONPATH=/

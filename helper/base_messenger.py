@@ -286,14 +286,19 @@ class BaseMessageHandler:
     
     def close(self):
         """Close the connection"""
-        self.stop_consuming()
+        if self._consuming:
+            self.stop_consuming()
+        
+        if self.channel and self.channel.is_open:
+            try:
+                self.channel.close()
+                self._channel = None
+            except Exception as e:
+                logging.error(f"Error closing channel: {e}")
         
         if self.connection and self.connection.is_open:
             try:
                 self.connection.close()
-                logging.info("Connection closed")
-                return True
+                self._connection = None
             except Exception as e:
                 logging.error(f"Error closing connection: {e}")
-                return False
-        return True

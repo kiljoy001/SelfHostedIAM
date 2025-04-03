@@ -9,6 +9,8 @@ ipfshttpclient = "*"
 safe-pysha3 = "*"
 pika = "*"
 tpm2-pytss = "*"
+aiohttp = "*"
+aio_pika = "*"
 
 [dev-packages]
 pytest = "*"
