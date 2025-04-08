@@ -201,11 +201,14 @@ class EmercoinMessageHandler(BaseMessageHandler):
                     raise SecurityError("Unauthorized access or invalid token")
             elif self.auth_service:
                 raise SecurityError("Missing authentication token for write operation")
-            
+
             # Process request
             days = message.options.get("days", 30)
             txid = self.emercoin_service.name_new(message.name, message.value, days)
-            
+
+            # Add audit logging
+            logger.info(f"AUDIT: User {message.user_id} created name {message.name} with txid {txid}")
+
             return EmercoinNameNewResponseMessage(
                 user_id=message.user_id,
                 correlation_id=message.id,
@@ -231,6 +234,9 @@ class EmercoinMessageHandler(BaseMessageHandler):
             # Process request
             days = message.options.get("days", 30)
             txid = self.emercoin_service.name_update(message.name, message.value, days)
+            
+            # Add audit logging
+            logger.info(f"AUDIT: User {message.user_id} updated name {message.name} with txid {txid}")
             
             return EmercoinNameUpdateResponseMessage(
                 user_id=message.user_id,

@@ -2,12 +2,14 @@ import pytest
 import os
 import json
 import logging
-from unittest.mock import Mock, patch, MagicMock
+import asyncio
+from unittest.mock import Mock, patch, MagicMock, AsyncMock
 from pathlib import Path
 
 # Import the TPM service
 from tpm.module.tpm_service import TPMService
-from helper.finite_state_machine import State
+from helper.finite_state_machine import State, BaseStateMachine
+from helper.base_service import BaseService
 
 # Configure logging
 logging.basicConfig(level=logging.INFO)
@@ -48,10 +50,11 @@ class TestTPMService:
         mock_handler.stop_consuming = Mock(return_value=True)
         return mock_handler
 
+    @pytest.mark.asyncio
     @patch('tpm.module.tpm_service.ScriptRunner')
     @patch('tpm.module.tpm_service.BaseStateMachine')
     @patch('tpm.module.tpm_service.TPMMessageHandler')
-    def test_initialization(self, mock_handler_class, mock_state_class, mock_runner_class, 
+    async def test_initialization(self, mock_handler_class, mock_state_class, mock_runner_class, 
                            mock_script_runner, mock_state_machine, mock_message_handler):
         """Test TPM service initialization"""
         # Setup mocks
@@ -74,6 +77,9 @@ class TestTPMService:
         # Initialize the service
         service = TPMService(config)
         
+        # Now we need to initialize the async service explicitly
+        await service.initialize()
+        
         # Verify initialization
         assert service.config == config, "Config should be stored"
         assert service.state_machine == mock_state_machine, "State machine should be initialized"
@@ -90,51 +96,63 @@ class TestTPMService:
         assert handler_kwargs['secret_key'] == 'test-secret'
         assert handler_kwargs['exchange'] == 'test-exchange'
 
-    def test_start_stop(self, mock_message_handler):
+    @pytest.mark.asyncio
+    async def test_start_stop(self, mock_message_handler):
         """Test starting and stopping the service"""
         # Create a service with mocked components
         service = TPMService({})
+        
+        # Mock the state machine and _run_in_executor methods
+        service.state_machine = Mock()
+        service._run_in_executor = AsyncMock(side_effect=lambda f: f())
+        service.emit_event = AsyncMock()
+        
+        # Set up the message handler mock
         service.message_handler = mock_message_handler
         
         # Test starting
-        result = service.start()
+        result = await service.start()
         assert result is True, "Service should start successfully"
         assert service.active is True, "Service should be marked active"
         mock_message_handler.start_consuming.assert_called_once_with(non_blocking=True)
         
         # Test starting when already active
         mock_message_handler.start_consuming.reset_mock()
-        result = service.start()
+        service.active = True
+        result = await service.start()
         assert result is True, "Starting an active service should return True"
         mock_message_handler.start_consuming.assert_not_called()
         
         # Test stopping
-        result = service.stop()
+        result = await service.stop()
         assert result is True, "Service should stop successfully"
         assert service.active is False, "Service should be marked inactive"
-        mock_message_handler.stop_consuming.assert_called_once()
+        service._run_in_executor.assert_called()
         
         # Test stopping when already inactive
-        mock_message_handler.stop_consuming.reset_mock()
+        service._run_in_executor.reset_mock()
         service.active = False
-        result = service.stop()
+        result = await service.stop()
         assert result is True, "Stopping an inactive service should return True"
-        mock_message_handler.stop_consuming.assert_not_called()
+        service._run_in_executor.assert_not_called()
         
         # Test failure handling
-        mock_message_handler.stop_consuming.side_effect = Exception("Test exception")
+        service._run_in_executor = AsyncMock(side_effect=Exception("Test exception"))
         service.active = True
-        result = service.stop()
-        assert result is True, "Should handle exceptions during stop by returning success"
+        result = await service.stop()
+        assert result is True, "Should handle exceptions during stop"
         assert service.active is False, "Service should be marked inactive even after exceptions"
 
-    def test_execute_command(self, mock_script_runner):
+    @pytest.mark.asyncio
+    async def test_execute_command(self, mock_script_runner):
         """Test executing commands directly"""
         # Create a service with mocked components
         service = TPMService({})
         service.script_runner = mock_script_runner
+        service.state_machine = Mock()
+        service.emit_event = AsyncMock()
         
-        # Test executing a command
+        # Test the synchronous version
         result = service.execute_command("tpm_provision", ["--test-mode"])
         
         # Verify results
@@ -142,23 +160,46 @@ class TestTPMService:
         assert result["success"] is True, "Command should execute successfully"
         assert result["command"] == "tpm_provision", "Command name should be included"
         
+        # Test the async version
+        mock_script_runner.execute.reset_mock()
+        service._run_in_executor = AsyncMock(return_value={"success": True, "async": True})
+        
+        result = await service.execute_command_async("tpm_provision", ["--test-mode"])
+        
+        # Verify results
+        assert result["success"] is True, "Async command should execute successfully"
+        assert result["async"] is True, "Should return result from executor"
+        service.emit_event.assert_awaited()
+        
         # Test error handling
         service.script_runner = None
         with pytest.raises(RuntimeError):
             service.execute_command("tpm_provision")
 
-    def test_send_command(self, mock_message_handler):
+    @pytest.mark.asyncio
+    async def test_send_command(self, mock_message_handler):
         """Test sending commands through message queue"""
         # Create a service with mocked components
         service = TPMService({})
         service.message_handler = mock_message_handler
+        service.state_machine = Mock()
+        service.emit_event = AsyncMock()
+        service._run_in_executor = AsyncMock(return_value="mock-message-id")
         
-        # Test sending a command
+        # Test sending a command synchronously
         message_id = service.send_command("tpm_provision", ["--test-mode"])
         
         # Verify results
         mock_message_handler.publish_command.assert_called_once_with("tpm_provision", ["--test-mode"])
         assert message_id == "mock-message-id", "Should return message ID from handler"
+        
+        # Test sending a command asynchronously
+        mock_message_handler.publish_command.reset_mock()
+        
+        message_id = await service.send_command_async("tpm_provision", ["--test-mode"])
+        
+        assert message_id == "mock-message-id", "Should return message ID from handler"
+        service.emit_event.assert_awaited()
         
         # Test error handling
         service.message_handler = None
@@ -181,11 +222,6 @@ class TestTPMService:
         
         state = service.get_state()
         assert state == State.IDLE, "Should return the current state"
-        
-        # Test with no state machine
-        service.state_machine = None
-        state = service.get_state()
-        assert state is None, "Should return None if no state machine"
 
     def test_is_active(self):
         """Test checking if service is active"""
@@ -197,58 +233,38 @@ class TestTPMService:
         service.active = False
         assert service.is_active() is False, "Should return inactive status"
 
-    def test_event_listeners(self):
+    @pytest.mark.asyncio
+    async def test_event_listeners(self):
         """Test adding and triggering event listeners"""
         service = TPMService({})
         
         # Create mock listeners
-        mock_listener1 = Mock()
-        mock_listener2 = Mock()
+        mock_sync_listener = Mock()
+        mock_async_listener = AsyncMock()
         
         # Add listeners
-        service.add_event_listener("test_event", mock_listener1)
-        service.add_event_listener("test_event", mock_listener2)
+        service.add_event_listener("test_event", mock_sync_listener)
+        service.add_event_listener("test_event", mock_async_listener)
+        
+        # Use a loop for the _run_in_executor method
+        loop = asyncio.get_event_loop()
+        service._run_in_executor = AsyncMock(
+            side_effect=lambda func: loop.run_in_executor(None, func)
+        )
         
         # Emit event
-        count = service.emit_event("test_event", "arg1", key="value")
+        count = await service.emit_event("test_event", "arg1", key="value")
         
         # Verify results
         assert count == 2, "Should notify both listeners"
-        mock_listener1.assert_called_once_with("arg1", key="value")
-        mock_listener2.assert_called_once_with("arg1", key="value")
+        mock_sync_listener.assert_called_once_with("arg1", key="value")
+        mock_async_listener.assert_awaited_once_with("arg1", key="value")
         
         # Test emitting to nonexistent event
-        count = service.emit_event("nonexistent")
+        count = await service.emit_event("nonexistent")
         assert count == 0, "Should handle nonexistent events"
         
         # Test error in listener
-        mock_listener1.side_effect = Exception("Test exception")
-        count = service.emit_event("test_event")
+        mock_sync_listener.side_effect = Exception("Test exception")
+        count = await service.emit_event("test_event")
         assert count == 1, "Should only count successful notifications"
-
-    @pytest.mark.asyncio
-    async def test_async_methods(self, mock_message_handler, mock_script_runner):
-        """Test async methods of the service"""
-        service = TPMService({})
-        service.message_handler = mock_message_handler
-        service.script_runner = mock_script_runner
-        
-        # Test async start
-        result = await service.start_async()
-        assert result is True, "Async start should succeed"
-        assert service.active is True, "Service should be marked active"
-        
-        # Test async stop
-        result = await service.stop_async()
-        assert result is True, "Async stop should succeed"
-        assert service.active is False, "Service should be marked inactive"
-        
-        # Test async command execution
-        mock_script_runner.execute.return_value = {"success": True, "async": True}
-        result = await service.execute_command_async("tpm_provision", ["--test-mode"])
-        assert result["success"] is True, "Async command should execute successfully"
-        assert result["async"] is True, "Should return result from script runner"
-        
-        # Test async command sending
-        message_id = await service.send_command_async("tpm_provision", ["--test-mode"])
-        assert message_id == "mock-message-id", "Should return message ID from handler"

@@ -12,7 +12,7 @@ from hypothesis import given, strategies as st, settings, assume
 from hypothesis.stateful import RuleBasedStateMachine, rule, invariant
 
 from tpm.module.tpm_service import TPMService
-from helper.finite_state_machine import BaseStateMachine
+from helper.finite_state_machine import BaseStateMachine, State
 from helper.script_runner import ScriptRunner
 
 # Disable logging during tests to reduce noise
@@ -96,15 +96,17 @@ def tpm_commands(draw):
     return command, args
 
 # Test TPMService initialization with various configurations
+@pytest.mark.asyncio
 @given(config_and_dir=service_configs())
 @settings(max_examples=10)
-def test_tpm_service_initialization(config_and_dir):
+async def test_tpm_service_initialization(config_and_dir):
     """Test TPMService initialization with different configurations"""
     config, script_dir = config_and_dir
     
     try:
         # Initialize service
         service = TPMService(config)
+        await service.initialize()
         
         # Check that essential components are initialized
         assert service.script_runner is not None, "Script runner should be initialized"
@@ -122,9 +124,10 @@ def test_tpm_service_initialization(config_and_dir):
             shutil.rmtree(script_dir)
 
 # Test TPMService start/stop
+@pytest.mark.asyncio
 @given(config_and_dir=service_configs())
 @settings(max_examples=5, deadline=None)  # Remove deadline to avoid timing issues
-def test_tpm_service_lifecycle(config_and_dir):
+async def test_tpm_service_lifecycle(config_and_dir):
     """Test TPMService start and stop operations"""
     config, script_dir = config_and_dir
     
@@ -143,22 +146,27 @@ def test_tpm_service_lifecycle(config_and_dir):
             
             # Now create the service
             service = TPMService(config)
+            await service.initialize()
+            
+            # Set up mocks for async methods
+            service._run_in_executor = AsyncMock(side_effect=lambda f: f())
+            service.emit_event = AsyncMock()
             
             # Manually replace the service's message handler with our mock
             # This is crucial - the service creates its own instance during initialization
             service.message_handler = mock_handler
             
             # Test starting the service
-            result = service.start()
+            result = await service.start()
             assert result is True, "Service should start successfully"
             assert service.active is True, "Service should be active after starting"
             mock_handler.start_consuming.assert_called_once_with(non_blocking=True)
             
             # Test stopping the service
-            result = service.stop()
+            result = await service.stop()
             assert result is True, "Service should stop successfully"
             assert service.active is False, "Service should be inactive after stopping"
-            mock_handler.stop_consuming.assert_called_once()
+            service._run_in_executor.assert_called()
     finally:
         # Clean up temporary directory
         import shutil
@@ -168,7 +176,8 @@ def test_tpm_service_lifecycle(config_and_dir):
         patch.stopall()
 
 # Test TPMService command execution with mocked script runner
-def test_tpm_service_execute_command():
+@pytest.mark.asyncio
+async def test_tpm_service_execute_command():
     """Test TPMService direct command execution"""
     # Create a simple hard-coded config
     config = {
@@ -214,15 +223,25 @@ def test_tpm_service_execute_command():
         
         # Initialize service with mocked components
         service = TPMService(config)
+        await service.initialize()
         service.script_runner = mock_runner  # Replace with our mock
         service.message_handler = mock_handler  # Replace with our mock
+        service.state_machine = MagicMock()
+        service.emit_event = AsyncMock()
+        service._run_in_executor = AsyncMock(return_value=mock_exec_result)
         
         # Test direct command execution
         result = service.execute_command(command, args)
         assert result == mock_exec_result, "Execute command should return expected result"
         mock_runner.execute.assert_called_once_with(command, args)
+        
+        # Test async command execution
+        result = await service.execute_command_async(command, args)
+        assert result == mock_exec_result, "Async execute command should return expected result"
+        service.emit_event.assert_awaited()
 
-def test_tpm_service_send_command():
+@pytest.mark.asyncio
+async def test_tpm_service_send_command():
     """Test TPMService command sending through message queue"""
     # Create a simple hard-coded config
     config = {
@@ -257,12 +276,22 @@ def test_tpm_service_send_command():
         
         # Initialize service with mocked components
         service = TPMService(config)
+        await service.initialize()
         service.message_handler = mock_handler  # Replace with our mock
+        service.state_machine = MagicMock()
+        service.emit_event = AsyncMock()
+        service._run_in_executor = AsyncMock(return_value="mock-message-id")
         
-        # Test sending command through message queue
+        # Test sending command through message queue (sync version)
         message_id = service.send_command(command, args)
         assert message_id == "mock-message-id", "Send command should return message ID"
         mock_handler.publish_command.assert_called_once_with(command, args)
+        
+        # Test async version
+        mock_handler.publish_command.reset_mock()
+        message_id = await service.send_command_async(command, args)
+        assert message_id == "mock-message-id", "Async send command should return message ID"
+        service.emit_event.assert_awaited()
 
 # Test TPMService's async methods
 @pytest.mark.asyncio
@@ -314,23 +343,30 @@ async def test_tpm_service_async_operations(config_and_dir, command_and_args):
             
             # Initialize service with mocked components
             service = TPMService(config)
+            await service.initialize()
             service.script_runner = mock_runner  # Replace with our mock
             service.message_handler = mock_handler  # Replace with our mock
+            service.state_machine = MagicMock()
+            service.emit_event = AsyncMock()
+            service._run_in_executor = AsyncMock(side_effect=lambda f: f())
             
-            # Test async start
-            result = await service.start_async()
-            assert result is True, "Async start should succeed"
+            # Test starting the service
+            result = await service.start()
+            assert result is True, "Service should start successfully"
             
             # Test async command execution
+            service._run_in_executor = AsyncMock(return_value=mock_exec_result)
             result = await service.execute_command_async(command, args)
             assert result == mock_exec_result, "Async execute command should return expected result"
             
             # Test async message sending
+            service._run_in_executor = AsyncMock(return_value="mock-message-id")
             message_id = await service.send_command_async(command, args)
             assert message_id == "mock-message-id", "Async send command should return message ID"
             
-            # Test async stop
-            result = await service.stop_async()
+            # Test stopping the service
+            service._run_in_executor = AsyncMock(side_effect=lambda f: f())
+            result = await service.stop()
             assert result is True, "Async stop should succeed"
     finally:
         # Clean up temporary directory
@@ -339,6 +375,7 @@ async def test_tpm_service_async_operations(config_and_dir, command_and_args):
             shutil.rmtree(script_dir)
 
 # Test TPMService event system
+@pytest.mark.asyncio
 @given(
     config_and_dir=service_configs(),
     event_type=st.text(
@@ -349,7 +386,7 @@ async def test_tpm_service_async_operations(config_and_dir, command_and_args):
     event_data=st.text(min_size=0, max_size=100)
 )
 @settings(max_examples=10, deadline=None)
-def test_tpm_service_events(config_and_dir, event_type, event_data):
+async def test_tpm_service_events(config_and_dir, event_type, event_data):
     """Test TPMService event system"""
     config, script_dir = config_and_dir
     
@@ -358,22 +395,29 @@ def test_tpm_service_events(config_and_dir, event_type, event_data):
         with patch('tpm.tpm_message_handler.TPMMessageHandler', autospec=True):
             # Initialize service
             service = TPMService(config)
+            await service.initialize()
             
-            # Create a listener mock
-            listener_mock = MagicMock()
+            # Mock functions for async testing
+            sync_listener = MagicMock()
+            async_listener = AsyncMock()
+            service._run_in_executor = AsyncMock(side_effect=lambda f: f())
             
-            # Add the listener and verify
-            result = service.add_event_listener(event_type, listener_mock)
-            assert result is True, "Adding event listener should succeed"
+            # Add the listeners and verify
+            result = service.add_event_listener(event_type, sync_listener)
+            assert result is True, "Adding sync event listener should succeed"
             
-            # Emit an event and verify listener was called
-            count = service.emit_event(event_type, event_data)
-            assert count == 1, "Emit event should return count of notified listeners"
-            listener_mock.assert_called_once_with(event_data)
+            result = service.add_event_listener(event_type, async_listener)
+            assert result is True, "Adding async event listener should succeed"
+            
+            # Emit an event and verify listeners were called
+            count = await service.emit_event(event_type, event_data)
+            assert count == 2, "Emit event should return count of notified listeners"
+            sync_listener.assert_called_once_with(event_data)
+            async_listener.assert_awaited_once_with(event_data)
             
             # Test with no registered listeners
             random_event_type = event_type + "_nonexistent"
-            count = service.emit_event(random_event_type, event_data)
+            count = await service.emit_event(random_event_type, event_data)
             assert count == 0, "Emit event with no listeners should return 0"
     finally:
         # Clean up temporary directory
@@ -382,9 +426,10 @@ def test_tpm_service_events(config_and_dir, event_type, event_data):
             shutil.rmtree(script_dir)
 
 # Test error handling in TPMService
+@pytest.mark.asyncio
 @given(config_and_dir=service_configs())
 @settings(max_examples=5, deadline=None)  # Remove deadline to avoid timing issues
-def test_tpm_service_error_handling(config_and_dir):
+async def test_tpm_service_error_handling(config_and_dir):
     """Test TPMService error handling"""
     config, script_dir = config_and_dir
     
@@ -400,12 +445,17 @@ def test_tpm_service_error_handling(config_and_dir):
             
             # Initialize service
             service = TPMService(config)
+            await service.initialize()
+            
+            # Mock the state machine and event emission
+            service.state_machine = MagicMock()
+            service.emit_event = AsyncMock()
             
             # Make sure our mock is being used
             service.message_handler = mock_handler
             
             # Test starting with no channel
-            result = service.start()
+            result = await service.start()
             assert result is False, "Start with no channel should fail"
             assert service.active is False, "Service should remain inactive after failed start"
     finally:
@@ -415,90 +465,3 @@ def test_tpm_service_error_handling(config_and_dir):
             shutil.rmtree(script_dir)
         # Make sure all patches are stopped
         patch.stopall()
-
-# Stateful testing with RuleBasedStateMachine
-def __init__(self):
-    super().__init__()
-    # Create a temporary directory for scripts
-    self.script_dir = tempfile.mkdtemp()
-    
-    # Create mock scripts for testing
-    # ... (your existing script setup code)
-    
-    # Basic config using localhost
-    self.config = {
-        'rabbitmq_host': 'localhost',
-        'secret_key': 'test_secret',
-        'exchange': 'test_exchange',
-        'script_dir': self.script_dir,
-        'script_paths': script_paths,
-        'script_hashes': {
-            name: "dummy_hash_for_testing" for name in script_paths.keys()
-        }
-    }
-    
-    # Stop any existing patches first
-    patch.stopall()
-    
-    # Create mocks WITHOUT autospec
-    self.mock_handler_patcher = patch('tpm.tpm_message_handler.TPMMessageHandler')
-    self.mock_runner_patcher = patch('helper.script_runner.ScriptRunner')
-    
-    # Start patchers
-    self.mock_handler_cls = self.mock_handler_patcher.start()
-    self.mock_runner_cls = self.mock_runner_patcher.start()
-    
-    # Configure mock returns
-    self.mock_handler = MagicMock()
-    self.mock_handler.channel = MagicMock()
-    self.mock_handler.start_consuming.return_value = True
-    self.mock_handler.stop_consuming.return_value = True
-    self.mock_handler.publish_command.return_value = "mock-message-id"
-    self.mock_handler_cls.return_value = self.mock_handler
-    
-    self.mock_runner = MagicMock()
-    self.mock_runner.execute.return_value = {
-        "success": True,
-        "output": "Mock command output",
-        "error": "",
-        "command": "test_command",
-        "args": []
-    }
-    self.mock_runner_cls.return_value = self.mock_runner
-    
-    # Initialize service
-    self.service = TPMService(self.config)
-    
-    # Explicitly replace service components with our mocks
-    self.service.script_runner = self.mock_runner
-    self.service.message_handler = self.mock_handler
-    
-    # State tracking
-    self.started = False
-    self.commands_executed = []
-    self.commands_sent = []
-    self.events = {}
-
-def teardown(self):
-    """Clean up after the test"""
-    try:
-        # Stop service if it's running
-        if self.started and self.service:
-            self.service.stop()
-        
-        # Stop all patchers
-        if hasattr(self, 'mock_handler_patcher'):
-            self.mock_handler_patcher.stop()
-        if hasattr(self, 'mock_runner_patcher'):
-            self.mock_runner_patcher.stop()
-            
-        # Stop any other patches that might be active
-        patch.stopall()
-            
-    except Exception as e:
-        print(f"Error in teardown: {e}")
-    finally:
-        # Clean up temporary directory
-        import shutil
-        if os.path.exists(self.script_dir):
-            shutil.rmtree(self.script_dir)

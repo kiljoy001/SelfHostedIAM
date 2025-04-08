@@ -251,14 +251,17 @@ class AsyncRabbitMQConnection:
         queue_name: str, 
         callback: Callable,
         prefetch_count: int = 10
-    ):
+        ) -> str:
         """
         Start consuming messages from a queue
-        
+
         Args:
             queue_name: Name of the queue
             callback: Callback function to process messages
             prefetch_count: Number of messages to prefetch
+
+        Returns:
+            Consumer tag
         """
         # Initialize resources
         self._init_queue_resources(queue_name)
@@ -273,54 +276,65 @@ class AsyncRabbitMQConnection:
         # Start consuming
         consumer_tag = f"consumer-{queue_name}-{id(self)}"
         
-        async def _consumer_callback(message: AbstractIncomingMessage):
+        async def _consumer_callback(message: aio_pika.abc.AbstractIncomingMessage):
             await self._process_message(message, queue_name, callback)
         
-        await queue.consume(_consumer_callback, consumer_tag=consumer_tag)
-        self.logger.info(f"Started consumer for {queue_name}")
+        # Start consuming and get the consumer tag
+        consumer_tag = await queue.consume(_consumer_callback, consumer_tag=consumer_tag)
+        self.logger.info(f"Started consumer for {queue_name} with tag {consumer_tag}")
         
         return consumer_tag
     
-    async def start_consumer_task(
+    async def start_consumer_task( 
         self, 
         queue_name: str, 
         callback: Callable,
         prefetch_count: int = 10
-    ) -> asyncio.Task:
+        ) -> asyncio.Task:
         """
         Start a consumer in a separate task
-        
+
         Args:
             queue_name: Name of the queue
             callback: Callback function to process messages
             prefetch_count: Number of messages to prefetch
-            
+
         Returns:
             Task object for the consumer
         """
         async def _consumer_task():
-            consumer_tag = await self.start_consumer(
-                queue_name, 
-                callback,
-                prefetch_count
-            )
-            
-            # Keep task alive
+            # Store the consumer tag for later cancellation
+            consumer_tag = None
             try:
+                # Start consumer
+                consumer_tag = await self.start_consumer(
+                    queue_name, 
+                    callback,
+                    prefetch_count
+                )
+
+                # Keep task alive
                 while True:
                     await asyncio.sleep(1)
             except asyncio.CancelledError:
                 # Task cancelled, stop consuming
-                channel = await self._get_channel()
-                await channel.cancel(consumer_tag)
-                self.logger.info(f"Stopped consumer for {queue_name}")
-        
+                if consumer_tag:
+                    try:
+                        channel = await self._get_channel()
+                        # Use basic_cancel instead of cancel
+                        await channel.basic_cancel(consumer_tag)
+                        self.logger.info(f"Cancelled consumer {consumer_tag} for {queue_name}")
+                    except Exception as e:
+                        self.logger.error(f"Error cancelling consumer: {e}")
+                # Re-raise to properly handle task cancellation
+                raise
+            
         # Create and start the task
         task = asyncio.create_task(_consumer_task())
-        
+
         # Store task reference
         self._consumer_tasks[queue_name] = task
-        
+
         return task
     
     async def stop_consumer_task(self, queue_name: str, timeout: float = 5.0):
