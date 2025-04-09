@@ -73,12 +73,13 @@ async def create_service(service_class=None, config=None, mock_dependencies=True
         service_class = EmercoinService
         
     if config is None:
-        # Default test configuration
+        # Default test configuration with correct parameter names
         config = {
-            "host": "localhost", 
-            "port": 8332, 
-            "user": "test", 
-            "password": "test"
+            "rpc_url": "http://localhost:8332",  # Changed from host/port to rpc_url
+            "rpc_user": "test",                 # Changed from user to rpc_user
+            "rpc_password": "test",             # Changed from password to rpc_password
+            "timeout": 10,
+            "max_retries": 3
         }
     
     # Create service instance

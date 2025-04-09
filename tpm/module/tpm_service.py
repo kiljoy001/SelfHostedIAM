@@ -21,12 +21,12 @@ class TPMService(BaseService):
     async def _initialize(self):
         """Initialize TPM service components"""
         logger.info("Initializing TPM service")
-        
+
         # Get configuration values with defaults
         rabbitmq_host = self.config.get('rabbitmq_host', 'localhost')
         secret_key = self.config.get('secret_key', os.getenv('HMAC_SECRET', 'default_secret'))
         exchange = self.config.get('exchange', 'app_events')
-        
+
         # Determine script paths
         script_dir = self.config.get('script_dir', os.path.dirname(__file__))
         script_paths = self.config.get('script_paths', {
@@ -34,16 +34,17 @@ class TPMService(BaseService):
             "generate_cert": Path(script_dir) / "tpm_self_signed_cert.sh",
             "get_random": Path(script_dir) / "tpm_random_number.sh"
         })
-        
+
         script_hashes = self.config.get('script_hashes', {
             "tpm_provision": "56175ef85b51d414f7cc4cf7da5cc6c5c65fd59d4de74431ea3ccd9bd80e3bec",
             "generate_cert": "019325eca0c5748aa6079fd99eabe64f67d0b4573a05afec39f0e6f627840d76",
             "get_random": "ad8ff1334920941997f18d5da362abcf80bea5df5445ccc0d6bec4e8cb5612dc"
         })
-        
+
         # Create script runner - no need to create state machine as it's already in BaseService
         self.script_runner = ScriptRunner(script_paths, script_hashes)
-        
+        logger.debug(f"Created script runner: {self.script_runner}")
+
         # Create message handler
         self.message_handler = await self._run_in_executor(
             lambda: TPMMessageHandler(
@@ -54,24 +55,31 @@ class TPMService(BaseService):
                 exchange=exchange
             )
         )
-        
+        logger.debug(f"Created message handler: {self.message_handler}, type: {type(self.message_handler)}")
+
         logger.info("TPM service initialized")
     
     async def start(self) -> bool:
         """Start the TPM service asynchronously"""
-        # First call the parent class's start method to update state
-        await super().start()
-        
+        # Call the parent class's async start method since we're async too
+        await super().start_async()
+
         if self.active:
             logger.warning("TPM service already running")
             return True
-        
+
         logger.info("Starting TPM service")
-        if self.message_handler and self.message_handler.channel:
+        # Add debug logging to check if the message_handler is available
+        logger.debug(f"Message handler: {self.message_handler}, has channel: {hasattr(self.message_handler, 'channel')}")
+
+        if self.message_handler and hasattr(self.message_handler, 'channel') and self.message_handler.channel:
             # Start consuming messages in a non-blocking way
+            logger.debug("About to call start_consuming via _run_in_executor")
             result = await self._run_in_executor(
                 lambda: self.message_handler.start_consuming(non_blocking=True)
             )
+            logger.debug(f"Start consuming result: {result}")
+
             if result:
                 self.active = True
                 self.state_machine.transition(State.COMPLETED, {"action": "start", "completed": True})
@@ -85,9 +93,9 @@ class TPMService(BaseService):
     
     async def stop(self) -> bool:
         """Stop the TPM service asynchronously"""
-        # First call the parent class's stop method to update state
-        await super().stop()
-        
+        # Call the parent class's async stop method since we're async too
+        await super().stop_async()
+
         if not self.active:
             logger.warning("TPM service not running")
             return True
@@ -242,3 +250,22 @@ class TPMService(BaseService):
         """
         loop = asyncio.get_event_loop()
         return await loop.run_in_executor(None, func)
+    
+    async def _initialize_async(self):
+        """
+        Initialize service-specific components asynchronously.
+
+        This method overrides the base class method and calls our custom _initialize method.
+        """
+        return await self._initialize()
+    
+    def _initialize_sync(self):
+        """
+        Initialize service-specific components synchronously.
+        
+        This method overrides the base class method.
+        Just a placeholder since we're primarily using async initialization.
+        """
+        # TPM Service uses async initialization, so this is just a placeholder
+        logger.info("TPM Service synchronous initialization called - use async initialization instead")
+        pass
