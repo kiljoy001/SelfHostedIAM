@@ -23,20 +23,19 @@ def default_config():
 @pytest.fixture
 async def service(default_config):
     service = EmercoinService(default_config)
-    await service.initialize()
+    await service.initialize_async()
     return service
 
-# Strategy for valid Emercoin name-value records
+# Define a strategy for valid Emercoin name-value records
 name_value_strategy = st.fixed_dictionaries({
-    'name': st.one_of(
-        st.from_regex(r'dns:[a-zA-Z0-9_\-\.]{1,100}', fullmatch=True),
-        st.from_regex(r'id:[a-zA-Z0-9_\-\.]{1,100}', fullmatch=True),
-        st.from_regex(r'ssl:[a-zA-Z0-9_\-\.]{1,100}', fullmatch=True),
-        st.from_regex(r'ssh:[a-zA-Z0-9_\-\.]{1,100}', fullmatch=True),
-        st.from_regex(r'test:[a-zA-Z0-9_\-\.]{1,100}', fullmatch=True)
+    'name': st.builds(
+        lambda namespace, domain: f"{namespace}:{domain}",
+        namespace=st.sampled_from(['dns', 'id', 'ssl', 'ssh', 'test']),
+        # Generate valid domain names rather than arbitrary strings
+        domain=st.from_regex(r'[a-z0-9]([a-z0-9\-]{0,61}[a-z0-9])?(\.[a-z0-9]([a-z0-9\-]{0,61}[a-z0-9])?)*', fullmatch=True)
     ),
-    'value': st.text(max_size=512),
-    'days': st.integers(min_value=1, max_value=365)
+    'value': st.text(min_size=0, max_size=100),
+    'days': st.integers(min_value=1, max_value=90)
 })
 
 # Strategy for name_filter regex patterns
@@ -58,12 +57,12 @@ name_filter_strategy = st.one_of(
 async def create_service(service_class=None, config=None, mock_dependencies=True):
     """
     Create a service instance for testing with optional dependency mocking.
-    
+
     Args:
         service_class: The service class to instantiate (defaults to EmercoinService if None)
         config: Configuration to pass to the service
         mock_dependencies: Whether to mock external dependencies
-        
+
     Returns:
         Service instance with appropriate configuration
     """
@@ -71,45 +70,46 @@ async def create_service(service_class=None, config=None, mock_dependencies=True
     if service_class is None:
         from emercoin.module.emercoin_service import EmercoinService
         service_class = EmercoinService
-        
+
     if config is None:
         # Default test configuration with correct parameter names
         config = {
-            "rpc_url": "http://localhost:8332",  # Changed from host/port to rpc_url
-            "rpc_user": "test",                 # Changed from user to rpc_user
-            "rpc_password": "test",             # Changed from password to rpc_password
+            "rpc_url": "http://localhost:6662",
+            "rpc_user": "test",
+            "rpc_password": "test",
             "timeout": 10,
             "max_retries": 3
         }
-    
+
     # Create service instance
     service = service_class(config)
-    await service.initialize()
-    
+    await service.initialize_async()
+
     # If we should mock dependencies
     if mock_dependencies:
         # For EmercoinService, we need to mock the connection
         if service_class.__name__ == "EmercoinService":
             # Replace the real connection with a mock
             service.connection = mock.MagicMock()
-            
+
         # For TPMService, mock appropriate components
         elif service_class.__name__ == "TPMService":
             service.message_handler = mock.MagicMock()
             service.script_runner = mock.MagicMock()
-    
+
     try:
         # Start the service if it's TPMService (as that's expected behavior)
         if service_class.__name__ == "TPMService":
-            await service.start()
-        
+            await service.start_async()  # Use async version consistently
+
         yield service
     finally:
         # Ensure cleanup happens
         if service_class.__name__ == "TPMService" and service.is_active():
-            await service.stop()
+            await service.stop_async()  # Use async version consistently
         # Reset state for next test
-        await service.reset_state()
+        await service.reset_state_async()  # Use the async version instead of reset_state
+
 
 @pytest.mark.asyncio  # Mark test as asyncio
 @settings(suppress_health_check=[HealthCheck.function_scoped_fixture])

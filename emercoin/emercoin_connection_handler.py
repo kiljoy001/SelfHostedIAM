@@ -69,7 +69,7 @@ class EmercoinConnection:
         
         Args:
             config: A dictionary containing configuration options:
-                - rpc_url: URL of the Emercoin node RPC endpoint
+                - rpc_url: URL of the Emercoin node RPC endpoint (default: http://localhost:6662)
                 - rpc_user: RPC username
                 - rpc_password: RPC password
                 - timeout: Request timeout in seconds (default: 30)
@@ -81,15 +81,19 @@ class EmercoinConnection:
             ValueError: If required configuration options are missing
         """
         self._validate_config(config)
-        self.config = config
+        self.config = config.copy()  # Create a copy to avoid modifying the original
         
+        # Set default URL for Emercoin if not provided
+        if 'rpc_url' not in self.config:
+            self.config['rpc_url'] = 'http://localhost:6662'
+            
         # Log initialization (without sensitive data)
-        logger.info("Initializing Emercoin connection to %s", config['rpc_url'])
+        logger.info("Initializing Emercoin connection to %s", self.config['rpc_url'])
         
         # Initialize queue manager if needed
         self.queue_manager = None
-        if config.get('use_queue', False):
-            self.queue_manager = QueueManager(config)
+        if self.config.get('use_queue', False):
+            self.queue_manager = QueueManager(self.config)
             
         # Request counter for message IDs
         self.request_counter = 0
@@ -104,7 +108,7 @@ class EmercoinConnection:
         Raises:
             ValueError: If required configuration options are missing
         """
-        required_fields = ['rpc_url', 'rpc_user', 'rpc_password']
+        required_fields = ['rpc_user', 'rpc_password']
         missing_fields = [field for field in required_fields if not config.get(field)]
         
         if missing_fields:
@@ -190,7 +194,7 @@ class EmercoinConnection:
         payload = {
             'method': method,
             'params': params,
-            'jsonrpc': '2.0',
+            'jsonrpc': '2.0',  # Emercoin uses JSON-RPC 2.0
             'id': self.request_counter
         }
         
@@ -211,19 +215,28 @@ class EmercoinConnection:
                 # Check for authentication errors
                 if response.status_code in (401, 403):
                     logger.error(f"Authentication failed for RPC call to {rpc_url}")
-                    raise AuthError("Authentication failed for Emercoin RPC")
+                    raise AuthError(f"Authentication failed for Emercoin RPC: {response.status_code}")
                 
                 # Check for other HTTP errors
                 response.raise_for_status()
                 
                 # Parse response
-                result = response.json()
+                try:
+                    result = response.json()
+                except json.JSONDecodeError as e:
+                    logger.error(f"Invalid JSON response: {response.text[:200]}")
+                    raise ConnectionError(f"Failed to decode JSON response: {str(e)}")
                 
                 # Check for RPC error
-                if result.get('error'):
+                if result.get('error') is not None and result['error'] is not None:
                     error = result['error']
-                    error_code = error.get('code', -1)
-                    error_message = error.get('message', 'Unknown RPC error')
+                    if isinstance(error, dict):
+                        error_code = error.get('code', -1)
+                        error_message = error.get('message', 'Unknown RPC error')
+                    else:
+                        error_code = -1
+                        error_message = str(error)
+                    
                     logger.error(f"RPC error {error_code}: {error_message}")
                     raise RPCError(error_code, error_message)
                 
@@ -287,7 +300,7 @@ class EmercoinConnection:
         payload = {
             'method': method,
             'params': params,
-            'jsonrpc': '2.0',
+            'jsonrpc': '2.0',  # Emercoin uses JSON-RPC 2.0
             'id': self.request_counter
         }
         
@@ -310,19 +323,29 @@ class EmercoinConnection:
                         # Check for authentication errors
                         if response.status in (401, 403):
                             logger.error(f"Authentication failed for async RPC call to {rpc_url}")
-                            raise AuthError("Authentication failed for Emercoin RPC")
+                            raise AuthError(f"Authentication failed for Emercoin RPC: {response.status}")
                         
                         # Check for other HTTP errors
                         response.raise_for_status()
                         
                         # Parse response
-                        result = await response.json()
+                        try:
+                            result = await response.json()
+                        except (json.JSONDecodeError, aiohttp.ContentTypeError) as e:
+                            text = await response.text()
+                            logger.error(f"Invalid JSON response: {text[:200]}")
+                            raise ConnectionError(f"Failed to decode JSON response: {str(e)}")
                         
                         # Check for RPC error
-                        if result.get('error'):
+                        if result.get('error') is not None and result['error'] is not None:
                             error = result['error']
-                            error_code = error.get('code', -1)
-                            error_message = error.get('message', 'Unknown RPC error')
+                            if isinstance(error, dict):
+                                error_code = error.get('code', -1)
+                                error_message = error.get('message', 'Unknown RPC error')
+                            else:
+                                error_code = -1
+                                error_message = str(error)
+                            
                             logger.error(f"Async RPC error {error_code}: {error_message}")
                             raise RPCError(error_code, error_message)
                         
@@ -346,3 +369,123 @@ class EmercoinConnection:
         
         # This should never happen, but just in case
         raise ConnectionError("Unknown error occurred during async RPC call")
+
+    # Convenience methods for common Emercoin RPC calls
+    
+    def get_info(self) -> Dict[str, Any]:
+        """Get general information about the Emercoin node."""
+        return self.call('getinfo')
+    
+    def get_block_count(self) -> int:
+        """Get the current block count."""
+        return self.call('getblockcount')
+    
+    def get_balance(self) -> float:
+        """Get the total balance of the wallet."""
+        return self.call('getbalance')
+    
+    def get_new_address(self, account: str = "") -> str:
+        """
+        Get a new Emercoin address for receiving payments.
+        
+        Args:
+            account: Account name (for compatibility with older wallets)
+            
+        Returns:
+            str: The new address
+        """
+        if account:
+            return self.call('getnewaddress', [account])
+        return self.call('getnewaddress')
+    
+    def send_to_address(self, address: str, amount: float, comment: str = "", 
+                       comment_to: str = "", subtractfeefromamount: bool = False) -> str:
+        """
+        Send an amount to a given address.
+        
+        Args:
+            address: The Emercoin address to send to
+            amount: The amount in EMC
+            comment: A comment used to store what the transaction is for
+            comment_to: A comment to store the name of the person or organization to which you're sending
+            subtractfeefromamount: The fee will be deducted from the amount being sent
+            
+        Returns:
+            str: The transaction id
+        """
+        params = [address, amount]
+        if comment or comment_to or subtractfeefromamount:
+            params.append(comment)
+        if comment_to or subtractfeefromamount:
+            params.append(comment_to)
+        if subtractfeefromamount:
+            params.append(subtractfeefromamount)
+        return self.call('sendtoaddress', params)
+    
+    # NVS (Name-Value Storage) methods specific to Emercoin
+    
+    def name_new(self, name: str, value: str, days: int) -> str:
+        """
+        Create a new name-value pair in Emercoin's NVS.
+        
+        Args:
+            name: Name to register (with prefix, e.g. 'dns:example.com')
+            value: Value to store
+            days: Number of days to keep the name registered
+            
+        Returns:
+            str: Transaction ID
+        """
+        return self.call('name_new', [name, value, days])
+    
+    def name_update(self, name: str, value: str, days: int = 0) -> str:
+        """
+        Update an existing name-value pair in Emercoin's NVS.
+        
+        Args:
+            name: Name to update
+            value: New value to store
+            days: Additional days to keep the name registered
+            
+        Returns:
+            str: Transaction ID
+        """
+        return self.call('name_update', [name, value, days])
+    
+    def name_show(self, name: str) -> Dict[str, Any]:
+        """
+        Show the value of a name in Emercoin's NVS.
+        
+        Args:
+            name: Name to look up
+            
+        Returns:
+            dict: Information about the name
+        """
+        return self.call('name_show', [name])
+    
+    def name_history(self, name: str) -> List[Dict[str, Any]]:
+        """
+        Show the history of a name in Emercoin's NVS.
+        
+        Args:
+            name: Name to look up
+            
+        Returns:
+            list: History of the name
+        """
+        return self.call('name_history', [name])
+    
+    def name_filter(self, prefix: str = "", regex: str = "", max_results: int = 0) -> List[Dict[str, Any]]:
+        """
+        List names in Emercoin's NVS that match the given criteria.
+        
+        Args:
+            prefix: Filter by prefix (e.g. 'dns:')
+            regex: Filter by regular expression
+            max_results: Maximum number of results to return (0 = unlimited)
+            
+        Returns:
+            list: Matching names and their values
+        """
+        return self.call('name_filter', [prefix, regex, max_results])

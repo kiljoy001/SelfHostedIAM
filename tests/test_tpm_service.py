@@ -52,10 +52,10 @@ class TestTPMService:
 
     @pytest.mark.asyncio
     @patch('tpm.module.tpm_service.ScriptRunner')
-    @patch('helper.finite_state_machine.BaseStateMachine')
+    @patch('helper.finite_state_machine.BaseStateMachine')  # Corrected import path
     @patch('tpm.module.tpm_service.TPMMessageHandler')
     async def test_initialization(self, mock_handler_class, mock_state_class, mock_runner_class,
-                       mock_script_runner, mock_state_machine, mock_message_handler):
+                           mock_script_runner, mock_state_machine, mock_message_handler):
         """Test TPM service initialization"""
         # Setup mocks
         mock_runner_class.return_value = mock_script_runner
@@ -83,7 +83,7 @@ class TestTPMService:
         # Verify initialization
         assert service.config == config, "Config should be stored"
 
-        # Instead of checking state_machine directly, verify that the mock was called
+        # Verify that the state machine was created
         mock_state_class.assert_called_once()
 
         # Check that the message_handler was created with the right parameters
